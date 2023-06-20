@@ -1,0 +1,53 @@
+.env
+.DS_Store
+.tox
+dist
+build
+lid_ds.egg-info
+.pytest_cache
+*.py[cod]
+*.so
+.pytest_cache
+.vscode/
+
+
+.Python
+*.egg-info
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+.cache
+.tox
+.coverage
+.coverage.*
+coverage.xml
+*,cover
+
+# IPython Notebook
+# *.ipynb
+
+# Translations
+*.mo
+*.pot
+
+docs/_build
+.idea
+
+runs/
+runs.json
+runs.log
+
+# Sim Files
+*.h5
+
+/venv/
+
+# Models
+
+algorithms/Models/*
+
+# Scenarios
+scenarios/EPS_CWE-434/normal/images

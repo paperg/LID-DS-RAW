@@ -20,11 +20,12 @@ from algorithms.features.impl.w2v_embedding import W2VEmbedding
 from algorithms.features.impl.ngram_minus_one import NgramMinusOne
 from algorithms.features.impl.thread_change_flag import ThreadChangeFlag
 from algorithms.features.impl.max_score_threshold import MaxScoreThreshold
+from algorithms.features.impl.process_name import ProcessName
 
 from algorithms.persistance import save_to_mongo
 
 from algorithms.ids import IDS
-from algorithms.decision_engines.transformer import TRANSFORMER
+from algorithms.decision_engines.transformer_image import ImageIDS
 
 if __name__ == '__main__':
 
@@ -59,10 +60,10 @@ if __name__ == '__main__':
     EPOCH=30
     DROPOUT=0.1
     HIDDEN_LAYERS = 6
-    NUM_HEAD=6
+    NUM_HEAD = 8
 
-    NGRAM_LENGTH = 13
-    EMBEDDING_SIZE = 3
+    NGRAM_LENGTH = 9
+    EMBEDDING_SIZE = 5
     THREAD_AWARE = True
     BATCH_SIZE = 1024
     USE_THREAD_CHANGE_FLAG = True
@@ -103,7 +104,9 @@ if __name__ == '__main__':
             ngram=ngram,
             element_size=element_size
         )
-        final_features = [int_embedding, ngram_minus_one]
+        pname = ProcessName()
+
+        final_features = [pname, int_embedding, ngram_minus_one]
         if USE_THREAD_CHANGE_FLAG:
             tcf = ThreadChangeFlag(ngram_minus_one)
             final_features.append(tcf)
@@ -127,7 +130,7 @@ if __name__ == '__main__':
         # decision engine (DE)
         distinct_syscalls = dataloader.distinct_syscalls_training_data()
 
-        transAM = TRANSFORMER(
+        transAM = ImageIDS(
                     input_vector=concat,
                     distinct_syscalls=distinct_syscalls,
                     input_dim=input_dim,
@@ -156,12 +159,14 @@ if __name__ == '__main__':
 
         results = transAM.get_results(results)
         # results['config'] = ids.get_config_tree_links()
+        results['element_size'] = element_size
+        results['ngram_length'] = NGRAM_LENGTH
+        results['thread_aware'] = THREAD_AWARE
+
         results['dataset'] = LID_DS_VERSION[LID_DS_VERSION_NUMBER]
         results['direction'] = dataloader.get_direction_string()
         results['date'] = str(datetime.now().date())
         results['scenario'] = scenario_name
-        results['ngram_length'] = NGRAM_LENGTH
-        results['thread_aware'] = THREAD_AWARE
         results['detection_time'] = detection_time
-        results['Model'] = 'Transforer_Encoder_Liner'
+        results['Model'] = 'Transforer_Image_two_Encoder'
         save_to_mongo(results)

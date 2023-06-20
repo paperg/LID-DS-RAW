@@ -256,106 +256,53 @@ class TransformerEncoder(Encoder):
             self.attention_weights[i] = blk.attention.attention.attention_weights
         return X
 
-class DecoderBlock(nn.Module):
-    """解码器中第i个块"""
-    def __init__(self, key_size, query_size, value_size, num_hiddens,
-                 norm_shape, ffn_num_input, ffn_num_hiddens, num_heads,
-                 dropout, i, **kwargs):
-        super(DecoderBlock, self).__init__(**kwargs)
-        self.i = i
-        self.attention1 = MultiHeadAttention(
-            key_size, query_size, value_size, num_hiddens, num_heads, dropout)
+class ImageNet(nn.Module):
+
+    def __init__(self, num_hiddens=64,
+                 num_layers=2,
+                 dropout=0.1,
+                 num_heads=8,
+                 input_dim=64,
+                 ):
+        super().__init__()
+
+        ffn_num_input, ffn_num_hiddens = input_dim, input_dim * 2
+        key_size, query_size, value_size = input_dim, input_dim, input_dim
+        norm_shape = [input_dim]
+
+        self.transformer_encode = TransformerEncoder(key_size, query_size, value_size, num_hiddens, norm_shape,
+                                                     ffn_num_input,
+                                                     ffn_num_hiddens, num_heads, num_layers, dropout)
+
+        self.attention = MultiHeadAttention(key_size, query_size, value_size, num_hiddens, 1, dropout)
+
         self.addnorm1 = AddNorm(norm_shape, dropout)
-        self.attention2 = MultiHeadAttention(
-            key_size, query_size, value_size, num_hiddens, num_heads, dropout)
+        self.ffn = PositionWiseFFN(ffn_num_input, ffn_num_hiddens, num_hiddens)
         self.addnorm2 = AddNorm(norm_shape, dropout)
-        self.ffn = PositionWiseFFN(ffn_num_input, ffn_num_hiddens,
-                                   num_hiddens)
-        self.addnorm3 = AddNorm(norm_shape, dropout)
 
-    def forward(self, X, state):
-        enc_outputs, enc_valid_lens = state[0], state[1]
-        # 训练阶段，输出序列的所有词元都在同一时间处理，
-        # 因此state[2][self.i]初始化为None。
-        # 预测阶段，输出序列是通过词元一个接着一个解码的，
-        # 因此state[2][self.i]包含着直到当前时间步第i个块解码的输出表示
-        if state[2][self.i] is None:
-            key_values = X
-        else:
-            key_values = torch.cat((state[2][self.i], X), axis=1)
-        state[2][self.i] = key_values
-        if self.training:
-            batch_size, num_steps, _ = X.shape
-            # dec_valid_lens的开头:(batch_size,num_steps),
-            # 其中每一行是[1,2,...,num_steps]
-            dec_valid_lens = torch.arange(
-                1, num_steps + 1, device=X.device).repeat(batch_size, 1)
-        else:
-            dec_valid_lens = None
+        self.dense = nn.Linear(num_hiddens * 2, 61)
 
-        # 自注意力
-        X2 = self.attention1(X, key_values, key_values, dec_valid_lens)
-        Y = self.addnorm1(X, X2)
-        # 编码器－解码器注意力。
-        # enc_outputs的开头:(batch_size,num_steps,num_hiddens)
-        Y2 = self.attention2(Y, enc_outputs, enc_outputs, enc_valid_lens)
-        Z = self.addnorm2(Y, Y2)
-        return self.addnorm3(Z, self.ffn(Z)), state
+    def forward(self, X , Image_X):
+        # 1. normal for Image_X
+        K = Image_X / 0xff
 
-class TransformerDecoder(AttentionDecoder):
-    def __init__(self, vocab_size, key_size, query_size, value_size,
-                 num_hiddens, norm_shape, ffn_num_input, ffn_num_hiddens,
-                 num_heads, num_layers, dropout, **kwargs):
-        super(TransformerDecoder, self).__init__(**kwargs)
-        self.num_hiddens = num_hiddens
-        self.num_layers = num_layers
-        self.embedding = nn.Embedding(vocab_size, num_hiddens)
-        self.pos_encoding = PositionalEncoding(num_hiddens, dropout)
-        self.blks = nn.Sequential()
-        for i in range(num_layers):
-            self.blks.add_module("block"+str(i),
-                DecoderBlock(key_size, query_size, value_size, num_hiddens,
-                             norm_shape, ffn_num_input, ffn_num_hiddens,
-                             num_heads, dropout, i))
-        self.dense = nn.Linear(num_hiddens, vocab_size)
+        # 2. encoder for X using trnasfromer encode mode
+        Q = self.transformer_encode(X, None)
 
-    def init_state(self, enc_outputs, enc_valid_lens, *args):
-        return [enc_outputs, enc_valid_lens, [None] * self.num_layers]
+        Q = Q.permute(1, 0, 2)
+        # 3. calculate the attention for Q and K
+        V = self.attention(Q, K, K, None)
+        Y = self.addnorm1(Q, V)
+        V = self.addnorm2(Y, self.ffn(Y))
 
-    def forward(self, X, state):
-        X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens))
-        self._attention_weights = [[None] * len(self.blks) for _ in range (2)]
-        for i, blk in enumerate(self.blks):
-            X, state = blk(X, state)
-            # 解码器自注意力权重
-            self._attention_weights[0][
-                i] = blk.attention1.attention.attention_weights
-            # “编码器－解码器”自注意力权重
-            self._attention_weights[1][
-                i] = blk.attention2.attention.attention_weights
-        return self.dense(X), state
+        input= torch.cat((Q, V), dim=2)
+        # 4. using V as input for liner layer to output label
+        out = self.dense(input)
 
-    @property
-    def attention_weights(self):
-        return self._attention_weights
+        return out.view(out.shape[1], -1)
 
 
-class EncoderDecoder(nn.Module):
-    """The base class for the encoder-decoder architecture.
-
-    Defined in :numref:`sec_encoder-decoder`"""
-    def __init__(self, encoder, decoder, **kwargs):
-        super(EncoderDecoder, self).__init__(**kwargs)
-        self.encoder = encoder
-        self.decoder = decoder
-
-    def forward(self, enc_X, *args):
-        enc_outputs = self.encoder(enc_X, *args)
-        # dec_state = self.decoder.init_state(enc_outputs, *args)
-        return self.decoder(enc_outputs).view(-1, 61)
-
-class TRANSFORMER(BuildingBlock):
-
+class ImageIDS(BuildingBlock):
     def __init__(self,
                  input_vector: BuildingBlock,
                  distinct_syscalls: int,
@@ -367,18 +314,7 @@ class TRANSFORMER(BuildingBlock):
                  batch_size=64,
                  model_path='Models/Transformer',
                  force_train=False):
-        """
-        Args:
-            distinct_syscalls:  amount of distinct syscalls in training data
-            input_dim:          input dimension
-            epochs:             set training epochs of LSTM
-            hidden_layers:      amount of LSTM-layers
-            hidden_dim:         dimension of LSTM-layer
-            batch_size:         set maximum batch_size
-            model_path:         path to save trained Net to
-            force_train:        force training of Net
 
-        """
         super().__init__()
         self._input_vector = input_vector
         self._dependency_list = [input_vector]
@@ -404,6 +340,10 @@ class TRANSFORMER(BuildingBlock):
             'x': [],
             'y': []
         }
+
+        self._training_name = {}
+        self._validation_name = {}
+
         self._state = 'build_training_data'
         self._transformer = None
         self._batch_indices = []
@@ -413,34 +353,14 @@ class TRANSFORMER(BuildingBlock):
         self._batch_counter = 0
         self._batch_counter_val = 0
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        if not force_train:
-            print(self._model_path)
-            if os.path.isfile(self._model_path):
-                self._set_model()
-                self._transformer.load_state_dict(torch.load(self._model_path))
-            else:
-                print(f"Did not load Model {self._model_path}.")
+        self.Net = ImageNet(self._input_dim, self._hidden_layers, self._dropout, self._num_head, self._input_dim)
+        self.Net.to(self._device)
+
+    def forward(self, X, Image_X):
+        return self.Net(X, Image_X)
 
     def depends_on(self):
         return self._dependency_list
-
-    def _set_model(self):
-        num_hiddens, num_layers, dropout, batch_size = self._input_dim, self._hidden_layers , self._dropout, self._batch_size
-        ffn_num_input, ffn_num_hiddens, num_heads = self._input_dim, self._input_dim * 2, self._num_head
-        key_size, query_size, value_size = self._input_dim, self._input_dim, self._input_dim
-        norm_shape = [self._input_dim]
-
-        encoder = TransformerEncoder(key_size, query_size, value_size, num_hiddens, norm_shape, ffn_num_input, ffn_num_hiddens, num_heads,num_layers, dropout)
-        # decoder = TransformerDecoder(distinct_syscalls + 1, key_size, query_size, value_size, num_hiddens, norm_shape, ffn_num_input, ffn_num_hiddens, num_heads, num_layers, dropout)
-        decoder = nn.Linear(num_hiddens, self._distinct_syscalls)
-        self._transformer = EncoderDecoder(encoder, decoder)
-        self.init_weights(decoder)
-        self._transformer.to(self._device)
-
-    def init_weights(self, decoder):
-        initrange = 0.1
-        decoder.bias.data.zero_()
-        decoder.weight.data.uniform_(-initrange, initrange)
 
     def train_on(self, syscall: Syscall):
         """
@@ -452,12 +372,26 @@ class TRANSFORMER(BuildingBlock):
             feature_list (int): list of prepared features for DE
 
         """
+
         feature_list = self._input_vector.get_result(syscall)
-        if self._transformer is None and feature_list is not None:
-            x = np.array(feature_list[1:])
-            y = feature_list[0]
-            self._training_data['x'].append(x)
-            self._training_data['y'].append(y)
+        if feature_list is not None:
+            x = np.array(feature_list[2:])
+            y = feature_list[1]
+            pname = feature_list[0]
+            if pname in self._training_name.keys():
+                self._training_name[pname]['x'].append(x)
+                self._training_name[pname]['y'].append(y)
+                self._training_name[pname]['pname'].append(pname)
+            else:
+                if pname == '<NA>':
+                    return
+                self._training_name[pname] = {}
+                self._training_name[pname]['x'] = [x]
+                self._training_name[pname]['y'] = [y]
+                self._training_name[pname]['pname'] = [pname]
+
+            # self._training_data['x'].append(x)
+            # self._training_data['y'].append(y)
             self._current_batch.append(self._batch_counter)
             self._batch_counter += 1
             if len(self._current_batch) == self._batch_size:
@@ -477,11 +411,27 @@ class TRANSFORMER(BuildingBlock):
 
         """
         feature_list = self._input_vector.get_result(syscall)
-        if self._transformer is None and feature_list is not None:
-            x = np.array(feature_list[1:])
-            y = feature_list[0]
-            self._validation_data['x'].append(x)
-            self._validation_data['y'].append(y)
+        if feature_list is not None:
+            x = np.array(feature_list[2:])
+            y = feature_list[1]
+            pname = feature_list[0]
+            # self._validation_name['pname'].append(pname)
+            # self._validation_name[pname]['x'].append(x)
+            # self._validation_name[pname]['y'].append(y)
+
+            if pname in self._validation_name.keys():
+                self._validation_name[pname]['x'].append(x)
+                self._validation_name[pname]['y'].append(y)
+                self._validation_name[pname]['pname'].append(pname)
+            else:
+                if pname == '<NA>':
+                    return
+                self._validation_name[pname] = {}
+                self._validation_name[pname]['x'] = [x]
+                self._validation_name[pname]['y'] = [y]
+                self._validation_name[pname]['pname'] = [pname]
+            # self._validation_data['x'].append(x)
+            # self._validation_data['y'].append(y)
             self._current_batch_val.append(self._batch_counter_val)
             self._batch_counter_val += 1
             if len(self._current_batch_val) == self._batch_size:
@@ -492,19 +442,35 @@ class TRANSFORMER(BuildingBlock):
 
     def _create_train_data(self, val: bool):
         if not val:
-            x_tensors = Variable(torch.Tensor(self._training_data['x'])).to(self._device)
-            y_tensors = Variable(torch.Tensor(self._training_data['y'])).to(self._device)
+            _training_data = {'x': [], 'y': [], 'pname': []}
+            for key in self._training_name.keys():
+                if key== '<NA>':
+                    continue
+                _training_data['x'].extend(self._training_name[key]['x'])
+                _training_data['y'].extend(self._training_name[key]['y'])
+                _training_data['pname'].extend(self._training_name[key]['pname'])
+
+            x_tensors = Variable(torch.Tensor(_training_data['x'])).to(self._device)
+            y_tensors = Variable(torch.Tensor(_training_data['y'])).to(self._device)
             y_tensors = y_tensors.long()
             x_tensors_final = torch.reshape(x_tensors, (x_tensors.shape[0], 1, x_tensors.shape[1]))
             print(f"Training Shape x: {x_tensors_final.shape} y: {y_tensors.shape}")
-            return SyscallFeatureDataSet(x_tensors_final, y_tensors), y_tensors
+            return SyscallFeatureDataSet(x_tensors_final, y_tensors, _training_data['pname']), y_tensors
         else:
-            x_tensors = Variable(torch.Tensor(self._validation_data['x'])).to(self._device)
-            y_tensors = Variable(torch.Tensor(self._validation_data['y'])).to(self._device)
+            _validation_data = {'x': [], 'y': [], 'pname': []}
+            for key in self._validation_name.keys():
+                if key== '<NA>':
+                    continue
+                _validation_data['x'].extend(self._validation_name[key]['x'])
+                _validation_data['y'].extend(self._validation_name[key]['y'])
+                _validation_data['pname'].extend(self._validation_name[key]['pname'])
+
+            x_tensors = Variable(torch.Tensor(_validation_data['x'])).to(self._device)
+            y_tensors = Variable(torch.Tensor(_validation_data['y'])).to(self._device)
             y_tensors = y_tensors.long()
             x_tensors_final = torch.reshape(x_tensors, (x_tensors.shape[0], 1, x_tensors.shape[1]))
             print(f"Validation Shape x: {x_tensors_final.shape} y: {y_tensors.shape}")
-            return SyscallFeatureDataSet(x_tensors_final, y_tensors), y_tensors
+            return SyscallFeatureDataSet(x_tensors_final, y_tensors, _validation_data['pname']), y_tensors
 
     def fit(self):
         """
@@ -526,28 +492,39 @@ class TRANSFORMER(BuildingBlock):
                     if "weight" in param:
                         nn.init.xavier_uniform_(m._parameters[param])
 
+        self.Image = {}
+        f = open('K:\hids\dataSet\Image\\apache2', "rb")
+        hex_list = [c for c in f.read()]
+        f.close()
+        self.Image['apache2'] = torch.stack(torch.Tensor(hex_list).split(64)[:-1]).unsqueeze(0).to(self._device)
+
+        f = open('K:\hids\dataSet\Image\\mysql', "rb")
+        hex_list = [c for c in f.read()]
+        f.close()
+        self.Image['mysqld'] = torch.stack(torch.Tensor(hex_list).split(64)[:-1]).unsqueeze(0).to(self._device)
+
         if self._state == 'build_training_data':
             self._state = 'fitting'
-        if self._transformer is None:
+        if self.Net is not None:
             train_dataset, y_tensors = self._create_train_data(val=False)
             val_dataset, y_tensors_val = self._create_train_data(val=True)
             # for custom batches
             train_dataloader = DataLoader(train_dataset, batch_sampler=self._batch_indices)
             val_dataloader = DataLoader(val_dataset, batch_sampler=self._batch_indices_val)
 
-            self._set_model()
-            self._transformer.apply(xavier_init_weights)
+            # self.Net.apply(xavier_init_weights)
             preds = []
             # Net hyperparameters
             criterion = torch.nn.CrossEntropyLoss()
-            optimizer = torch.optim.Adam(self._transformer.parameters(), lr=0.001)
+            optimizer = torch.optim.Adam(self.Net.parameters(), lr=0.001)
             torch.manual_seed(1)
             for epoch in tqdm(range(self._epochs),
                               'training network:'.rjust(25),
                               unit=" epochs"):
                 for i, data in enumerate(train_dataloader, 0):
-                    inputs, labels = data
-                    outputs = self._transformer.forward(inputs, None)
+                    inputs, labels, proname = data
+                    # def forward(self, X, Image_X)
+                    outputs = self.Net.forward(inputs, self.Image[proname[0]])
                     optimizer.zero_grad()
                     # obtain the loss function
                     train_loss = criterion(outputs, labels)
@@ -563,8 +540,8 @@ class TRANSFORMER(BuildingBlock):
                 self.new_recording()
                 val_loss = 0.0
                 for data in val_dataloader:
-                    inputs, labels = data
-                    outputs = self._transformer.forward(inputs, None)
+                    inputs, labels, proname = data
+                    outputs = self.Net.forward(inputs, self.Image[proname[0]])
                     optimizer.zero_grad()
                     loss = criterion(outputs, labels)
                     val_loss = loss.item() * inputs.size(0)
@@ -578,7 +555,6 @@ class TRANSFORMER(BuildingBlock):
                        accuracy,
                        val_loss,
                        val_accuracy))
-            # torch.save(self._transformer.state_dict(), self._model_path)
         else:
             print(f"Net already trained. Using model {self._model_path}")
             pass
@@ -599,13 +575,14 @@ class TRANSFORMER(BuildingBlock):
         """
         feature_list = self._input_vector.get_result(syscall)
         if feature_list:
-            x_tensor = Variable(torch.Tensor(np.array([feature_list[1:]])))
+            pname = feature_list[0]
+            x_tensor = Variable(torch.Tensor(np.array([feature_list[2:]])))
             x_tensor_final = torch.reshape(x_tensor,
                                            (x_tensor.shape[0],
                                             1,
                                             x_tensor.shape[1])).to(self._device)
-            actual_syscall = feature_list[0]
-            prediction_logits  = self._transformer(x_tensor_final, None)
+            actual_syscall = feature_list[1]
+            prediction_logits  = self.Net(x_tensor_final, self.Image[pname])
             softmax = nn.Softmax(dim=0)
             predicted_prob = float(softmax(prediction_logits[0])[actual_syscall])
             anomaly_score = 1 - predicted_prob
@@ -644,11 +621,26 @@ class TRANSFORMER(BuildingBlock):
         results['num_head'] = self._num_head
 
         return results
+class EncoderDecoder(nn.Module):
+    """The base class for the encoder-decoder architecture.
+
+    Defined in :numref:`sec_encoder-decoder`"""
+    def __init__(self, encoder, decoder, **kwargs):
+        super(EncoderDecoder, self).__init__(**kwargs)
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def forward(self, enc_X, *args):
+        enc_outputs = self.encoder(enc_X, *args)
+        # dec_state = self.decoder.init_state(enc_outputs, *args)
+        return self.decoder(enc_outputs).view(-1, 61)
+
 class SyscallFeatureDataSet(Dataset):
 
-    def __init__(self, X, Y):
+    def __init__(self, X, Y, pname):
         self.X = X
         self.Y = Y
+        self.name = pname
         if len(self.X) != len(self.Y):
             raise Exception("The length of X does not match length of Y")
 
@@ -658,4 +650,4 @@ class SyscallFeatureDataSet(Dataset):
     def __getitem__(self, index):
         _x = self.X[index]
         _y = self.Y[index]
-        return _x, _y
+        return _x, _y, self.name[index]

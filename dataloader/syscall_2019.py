@@ -60,7 +60,7 @@ class Syscall2019(Syscall):
                 '%H:%M:%S.%f')
             # change default year from 1900 to 1970
             # so time is not negative
-            timestamp_datetime = timestamp_datetime.replace(year=1970)
+            timestamp_datetime = timestamp_datetime.replace(year=1970).replace(hour=8)
             self._timestamp_unix = mktime(timestamp_datetime.timetuple()) * 1e9 \
                     + timestamp_datetime.microsecond
 

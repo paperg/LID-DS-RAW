@@ -25,7 +25,7 @@ from algorithms.features.impl.process_name import ProcessName
 from algorithms.persistance import save_to_mongo
 
 from algorithms.ids import IDS
-from algorithms.decision_engines.transformer_image import ImageIDS
+from algorithms.decision_engines.transformer import ImageIDS
 
 if __name__ == '__main__':
 
@@ -158,7 +158,7 @@ if __name__ == '__main__':
         pprint(results)
 
         results = transAM.get_results(results)
-        # results['config'] = ids.get_config_tree_links()
+        results['config'] = ids.get_config_tree_links()
         results['element_size'] = element_size
         results['ngram_length'] = NGRAM_LENGTH
         results['thread_aware'] = THREAD_AWARE

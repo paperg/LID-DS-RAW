@@ -297,7 +297,7 @@ class ImageNet(nn.Module):
 
         input= torch.cat((Q, V), dim=2)
         # 4. using V as input for liner layer to output label
-        out = self.dense(input)
+        out = nn.ReLU(inplace=True)(self.dense(input))
 
         return out.view(out.shape[1], -1)
 

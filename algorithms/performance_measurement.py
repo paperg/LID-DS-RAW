@@ -63,15 +63,22 @@ class Performance:
 
         # files with exploit
         if self._current_exploit_time is not None:
+            # 异常文件中， _exploit_anomaly_score_count 序列的计数
             self._exploit_anomaly_score_count += 1
             if is_anomaly:
+                # 预测是异常，异常为阳，非异常为阴
                 if self._current_exploit_time > syscall_time:
+                    # 实际没有异常， 假阳
                     self._fp += 1
+                    # _current_cfp_stream_exploits 计数无用
                     self._current_cfp_stream_exploits += 1
+                    # 假阳开始， 记录序列 _exploit_anomaly_score_count 索引
                     self._cfp_start_exploits()
                     if self.create_alarms:
                         self.alarms.add_or_update_alarm(syscall, False)
                 elif self._current_exploit_time <= syscall_time:
+                    # 实际是异常， 真阳
+                    # 假阳结束，一次假阳计数加一，多次假阳算一个
                     self._cfp_end_exploits()
                     if self.create_alarms:
                         self.alarms.add_or_update_alarm(syscall, True)
@@ -83,24 +90,33 @@ class Performance:
                         self._tp += 1
 
             else:
+                # 预测是非异常
                 if self.create_alarms:
                     self.alarms.end_alarm()
+                # 假阳结束，一次假阳计数加一，多次假阳算一个
                 self._cfp_end_exploits()
                 if self._current_exploit_time > syscall_time:
+                    # 实际是非异常，真阴
                     self._tn += 1
                 elif self._current_exploit_time <= syscall_time:
+                    # 实际是异常，假阴
                     self._fn += 1
 
         # files without exploit
         elif self._current_exploit_time is None:
+            # 实际非异常
+            # 正常文件中，序列的计数
             self._normal_score_count += 1
             if is_anomaly:
+                # 假阳
                 self._fp += 1
+                # 无用计数
                 self._current_cfp_stream_normal += 1
                 self._cfp_start_normal()
                 if self.create_alarms:
                     self.alarms.add_or_update_alarm(syscall, False)
             else:
+                # 真阴
                 if self.create_alarms:
                     self.alarms.end_alarm()
                 self._cfp_end_normal()
@@ -169,9 +185,11 @@ class Performance:
         sets flags for correct index counting
 
         """
+        # _cfp_counter_wait_exploits 与  _current_cfp_stream_exploits  感觉冲突了，一样的作用。
         if self._cfp_counter_wait_exploits is True:
             if self._current_cfp_stream_exploits > 0:
                 self._current_cfp_stream_exploits = 0
+                # _cfp_count_exploits
                 self._cfp_count_exploits += 1
                 self._last_syscall_of_cfp_list_exploits.append(self._exploit_anomaly_score_count)
                 self._cfp_counter_wait_exploits = False

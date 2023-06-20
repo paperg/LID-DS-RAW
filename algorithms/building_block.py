@@ -16,6 +16,9 @@ class BuildingBlock:
         self.__last_result = None
         self.__last_syscall_id = None
 
+    def is_needtrain(self):
+        return True
+
     def train_on(self, syscall: Syscall):
         """
         takes one system call to train this bb

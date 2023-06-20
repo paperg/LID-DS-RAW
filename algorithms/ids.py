@@ -126,6 +126,8 @@ class IDS:
                 self.plot.new_recording(recording)
 
             for syscall in recording.syscalls():
+                if syscall.process_name() == "<NA>":
+                    continue
                 is_anomaly = self._final_bb.get_result(syscall)
                 self.performance.analyze_syscall(syscall, is_anomaly)
                 if self.plot is not None:

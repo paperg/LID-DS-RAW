@@ -1,7 +1,9 @@
 from algorithms.building_block import BuildingBlock
 from dataloader.syscall import Syscall
+import torch
+import os
 
-
+TIMEDELTAMODELPATH='./Models/Time_Delta_model'
 class TimeDelta(BuildingBlock):
     """
     calculates the delta to the last systall within the same thread (if thread aware)
@@ -14,14 +16,24 @@ class TimeDelta(BuildingBlock):
         self._last_time = {}
         self._thread_aware = thread_aware
         self._dependency_list = []
-
+        self.need_train = True
+        if os.path.exists(TIMEDELTAMODELPATH):
+            self._max_time_delta = torch.load(TIMEDELTAMODELPATH)
+            print('Load TimeDelta Model From %s' % TIMEDELTAMODELPATH)
+            self.need_train = False
     def depends_on(self) -> list:
         return []
+
+    def is_needtrain(self):
+        return self.need_train
 
     def train_on(self, syscall: Syscall):
         """
         calc max time delta
         """
+        if not self.need_train:
+            return
+
         current_time = syscall.timestamp_unix_in_ns()
         thread_id = 0
         if self._thread_aware:
@@ -32,6 +44,12 @@ class TimeDelta(BuildingBlock):
 
     def fit(self):
         self._last_time = {}
+        if not self.need_train:
+            return
+
+        torch.save(self._max_time_delta, TIMEDELTAMODELPATH)
+        print("Save TimeDelta Model To %s" % TIMEDELTAMODELPATH)
+
 
     def _calculate(self, syscall: Syscall):
         """
@@ -42,6 +60,7 @@ class TimeDelta(BuildingBlock):
         if self._thread_aware:
             thread_id = syscall.thread_id()
         delta = self._calc_delta(current_time, thread_id)
+        # noremalize the delta
         normalized_delta = delta / self._max_time_delta
         return normalized_delta
 

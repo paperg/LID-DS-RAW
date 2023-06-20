@@ -15,19 +15,9 @@ from dataloader.direction import Direction
 
 if __name__ == '__main__':
 
-    # getting the LID-DS base path from argument or environment variable
-    if len(sys.argv) > 1:
-        LID_DS_BASE_PATH = sys.argv[1]
-    else:
-        try:
-            LID_DS_BASE_PATH = os.environ['LID_DS_BASE']
-        except KeyError as exc:
-            raise ValueError("No LID-DS Base Path given."
-                             "Please specify as argument or set Environment Variable "
-                             "$LID_DS_BASE") from exc
-
-    LID_DS_VERSION = "LID-DS-2019"
-    SCENARIO_NAME = "CVE-2017-7529"
+    LID_DS_BASE_PATH = 'K:/hids'
+    LID_DS_VERSION = "dataSet"
+    SCENARIO_NAME = "CWE-89-SQL-injection"
 
     scenario_path = f"{LID_DS_BASE_PATH}/{LID_DS_VERSION}/{SCENARIO_NAME}"
     dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)

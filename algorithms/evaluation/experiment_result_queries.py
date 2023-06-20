@@ -18,14 +18,13 @@ class ResultQuery:
     """
 
     def __init__(self, collection_name="experiments"):
-        mongo_ip = os.environ["LID_DS_MONGO_IP"]
-        mongo_user = os.environ["LID_DS_MONGO_USER"]
-        mongo_pw = os.environ["LID_DS_MONGO_PW"]
+        # mongo_ip = os.environ["LID_DS_MONGO_IP"]
+        # mongo_user = os.environ["LID_DS_MONGO_USER"]
+        # mongo_pw = os.environ["LID_DS_MONGO_PW"]
 
         client = MongoClient(
-            mongo_ip,
-            username=mongo_user,
-            password=mongo_pw
+            host='localhost',
+            port=27017
         )
 
         self._experiments: Collection = client[collection_name][collection_name]

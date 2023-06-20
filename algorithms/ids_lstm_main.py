@@ -29,7 +29,7 @@ from algorithms.decision_engines.lstm import LSTM
 
 if __name__ == '__main__':
 
-    LID_DS_VERSION_NUMBER = 0
+    LID_DS_VERSION_NUMBER = 1
     LID_DS_VERSION = [
             "LID-DS-2019",
             "LID-DS-2021"
@@ -37,12 +37,12 @@ if __name__ == '__main__':
 
     # scenarios ordered by training data size asc    
     SCENARIOS = [
+      "CWE-89-SQL-injection",
       "CVE-2017-7529",
       "CVE-2014-0160",
       "CVE-2012-2122",
       "Bruteforce_CWE-307",
       "CVE-2020-23839",
-      "CWE-89-SQL-injection",
       "PHP_CWE-434",
       "ZipSlip",
       "CVE-2018-3760",
@@ -62,25 +62,17 @@ if __name__ == '__main__':
     EMBEDDING_SIZE = 4
     THREAD_AWARE = True
     BATCH_SIZE = 1024
-    USE_THREAD_CHANGE_FLAG = False
-    USE_RETURN_VALUE = False
-    USE_TIME_DELTA = False
+    USE_THREAD_CHANGE_FLAG = True
+    USE_RETURN_VALUE = True
+    USE_TIME_DELTA = True
 
 
     # getting the LID-DS base path from argument or environment variable
-    if len(sys.argv) > 1:
-        LID_DS_BASE_PATH = sys.argv[1]
-    else:
-        try:
-            LID_DS_BASE_PATH = os.environ['LID_DS_BASE']
-        except KeyError as exc:
-            raise ValueError("No LID-DS Base Path given."
-                             "Please specify as argument or set Environment Variable "
-                             "$LID_DS_BASE") from exc
+    LID_DS_BASE_PATH = 'K:/hids'
 
     for scenario_name in SCENARIO_RANGE:
         scenario_path = os.path.join(LID_DS_BASE_PATH,
-                                     LID_DS_VERSION[LID_DS_VERSION_NUMBER],
+                                     "dataSet",
                                      scenario_name)
 
         # data loader for scenario
@@ -159,4 +151,5 @@ if __name__ == '__main__':
         results['ngram_length'] = NGRAM_LENGTH
         results['thread_aware'] = THREAD_AWARE
         results['detection_time'] = detection_time
+        results['Model'] = 'LSTM'
         save_to_mongo(results)

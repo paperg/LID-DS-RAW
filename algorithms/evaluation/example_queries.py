@@ -14,16 +14,16 @@ def find_results_with_specific_config():
     config aliases should be given for each algorithm containing a dictionary that represents the dependency graph.
 
     Given a dependency graph that look like:
-
-    >>> from algorithms.features.impl.max_score_threshold import MaxScoreThreshold
-    >>> from algorithms.decision_engines.lstm import LSTM
-    >>> from algorithms.features.impl.ngram import Ngram
-    >>> from algorithms.features.impl.int_embedding import IntEmbedding
-    >>>
-    >>> int_embedding = IntEmbedding()
-    >>> ngram = Ngram(thread_aware=True, feature_list=[int_embedding], ngram_length=10)
-    >>> lstm = LSTM(input_vector=ngram, distinct_syscalls=10, input_dim=20, hidden_layers=10)
-    >>> final_bb = MaxScoreThreshold(feature=lstm)
+    #
+    # >>> from algorithms.features.impl.max_score_threshold import MaxScoreThreshold
+    # >>> from algorithms.decision_engines.lstm import LSTM
+    # >>> from algorithms.features.impl.ngram import Ngram
+    # >>> from algorithms.features.impl.int_embedding import IntEmbedding
+    # >>>
+    # >>> int_embedding = IntEmbedding()
+    # >>> ngram = Ngram(thread_aware=True, feature_list=[int_embedding], ngram_length=10)
+    # >>> lstm = LSTM(input_vector=ngram, distinct_syscalls=10, input_dim=20, hidden_layers=10)
+    # >>> final_bb = MaxScoreThreshold(feature=lstm)
 
     The following `config_aliases` extract the config values of `LSTM.hidden_layers`, `Ngram.thread_aware` and `Ngram.ngram_length`.
     This values can later be used in the `where` clause.

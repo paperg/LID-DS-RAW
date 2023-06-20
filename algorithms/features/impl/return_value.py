@@ -1,7 +1,9 @@
 from algorithms.building_block import BuildingBlock
 from dataloader.syscall import Syscall
+import os
+import torch
 
-
+RVMODEPATH='./Models/ReturnValue_model'
 class ReturnValue(BuildingBlock):
     """
     calculate system call return value for all syscalls.
@@ -16,13 +18,20 @@ class ReturnValue(BuildingBlock):
         super().__init__()
         self._max = {}
         self._min_max_scaling = min_max_scaling
+        if os.path.exists(RVMODEPATH):
+            self._syscall_dict = torch.load(RVMODEPATH)
+            self._min_max_scaling = False
+            print('Load ReturnValue Model From %s' % RVMODEPATH)
+
+    def is_needtrain(self):
+        return self._min_max_scaling
 
     def train_on(self, syscall: Syscall):
         """
         save max value of each syscall
         """
-        return_value_string = syscall.param('res')
         if self._min_max_scaling:
+            return_value_string = syscall.param('res')
             if return_value_string is not None:
                 try:
                     current_bytes = int(return_value_string)
@@ -33,6 +42,11 @@ class ReturnValue(BuildingBlock):
                         self._max[syscall.name()] = current_bytes
                 except ValueError as e:
                     pass
+
+    def fit(self):
+        if self._min_max_scaling:
+            torch.save(self._max, RVMODEPATH)
+            print("Save Return Value Model To %s" % RVMODEPATH)
 
     def _calculate(self, syscall: Syscall):
         """

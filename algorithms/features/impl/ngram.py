@@ -27,7 +27,8 @@ class Ngram(BuildingBlock):
         self._deque_length = None
         self._dependency_list = []
         self._dependency_list.extend(feature_list)
-
+    # W2V 依赖 int embedding
+    # Ngram 依赖 W2V , return val, time dealt
     def depends_on(self):
         return self._dependency_list
 
@@ -42,9 +43,12 @@ class Ngram(BuildingBlock):
         # build the ngram if all dependencies are not None
         for feature in self._dependency_list:
             result = feature.get_result(syscall)
+            # W2V 获取系统调用 name -> int index
+            # Ngram ： dependencies append (W2V, Return Value, Time dealt)
             if result is None:
                 all_dependencies_are_not_none = False
             else:
+                # 如果依赖结果不为空，则添加到  dependencies 中
                 Ngram._concat(result, dependencies)
 
         # if all dependencies are not none: build the ngram 
@@ -59,7 +63,8 @@ class Ngram(BuildingBlock):
             if self._deque_length is None:
                 self._deque_length = self._ngram_length * len(dependencies)
             
-            # group by thread id            
+            # group by thread id
+            # 如果需要知道线程id, 每个线程创建一个大小为 _deque_length 的队列
             thread_id = syscall.thread_id() if self._thread_aware else 0
             if thread_id not in self._ngram_buffer:                
                 self._ngram_buffer[thread_id] = deque(maxlen=self._deque_length)
@@ -68,6 +73,7 @@ class Ngram(BuildingBlock):
             self._ngram_buffer[thread_id].extend(dependencies)
 
             # return the ngram if its complete
+            # 凑够 ngram 的 length
             if len(self._ngram_buffer[thread_id]) == self._deque_length:                
                 return tuple(self._ngram_buffer[thread_id])
         return None

@@ -3,8 +3,10 @@ from algorithms.building_block import BuildingBlock
 from algorithms.features.impl.ngram import Ngram
 from algorithms.features.impl.syscall_name import SyscallName
 from dataloader.syscall import Syscall
+import torch
+import os
 
-
+W2VMODULEPATH='./Models/W2V_Model'
 class W2VEmbedding(BuildingBlock):
     """
         Args:
@@ -41,9 +43,17 @@ class W2VEmbedding(BuildingBlock):
 
         self._unknown_input_value = unknown_input_value
         self._dependency_list = [self._ngram_bb, self._input_bb]
+        self.model_path  = W2VMODULEPATH + str(vector_size)
+
+        if os.path.exists(self.model_path):
+            self.w2vmodel = torch.load(self.model_path)
+            print('Load W2V Model From %s' % self.model_path)
 
     def depends_on(self):
         return self._dependency_list
+
+    def is_needtrain(self):
+        return self.w2vmodel is None
 
     def train_on(self, syscall: Syscall):
         """
@@ -72,6 +82,8 @@ class W2VEmbedding(BuildingBlock):
                              window=self._window_size,
                              min_count=1)
             self.w2vmodel = model
+            torch.save(model, self.model_path)
+            print("Save W2V Model To %s" % self.model_path)
 
     def _calculate(self, syscall: Syscall):
         """

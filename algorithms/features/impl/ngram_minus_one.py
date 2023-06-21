@@ -30,7 +30,7 @@ class NgramMinusOne(BuildingBlock):
         """
         ngram_value = self._ngram.get_result(syscall)
         if ngram_value is not None:
-                ngram_value = ngram_value[:-self._element_size]
+                # ngram_value = ngram_value[:-self._element_size]
                 return tuple(ngram_value)
         else:
             return None

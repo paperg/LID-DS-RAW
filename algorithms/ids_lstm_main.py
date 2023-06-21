@@ -94,7 +94,7 @@ if __name__ == '__main__':
         ngram = Ngram(
             feature_list=feature_list,
             thread_aware=THREAD_AWARE,
-            ngram_length=NGRAM_LENGTH + 1
+            ngram_length=NGRAM_LENGTH
         )
         ngram_minus_one = NgramMinusOne(
             ngram=ngram,
@@ -121,7 +121,7 @@ if __name__ == '__main__':
         lstm = LSTM(input_vector=concat,
                     distinct_syscalls=distinct_syscalls,
                     input_dim=input_dim,
-                    epochs=20,
+                    epochs=2,
                     hidden_layers=HIDDEN_LAYERS,
                     hidden_dim=HIDDEN_DIM,
                     batch_size=BATCH_SIZE,
@@ -151,5 +151,5 @@ if __name__ == '__main__':
         results['ngram_length'] = NGRAM_LENGTH
         results['thread_aware'] = THREAD_AWARE
         results['detection_time'] = detection_time
-        results['Model'] = 'LSTM'
+        results['Model'] = 'LSTM_sigmod_data'
         save_to_mongo(results)

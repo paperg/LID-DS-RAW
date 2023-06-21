@@ -89,6 +89,10 @@ class DataPreprocessor:
                     for recording in tqdm(self._data_loader.training_data(),
                                         f"train bb {current_generation + 1}/{num_generations}".rjust(27),
                                         unit=" recording"):
+                        if recording.metadata()["exploit"]:
+                            exploit_time = recording.metadata()["time"]["exploit"][0]["absolute"]
+                        else:
+                            exploit_time = None
                         for syscall in recording.syscalls():
                             # calculate already fitted bbs
                             for previous_generation in range(0, current_generation):
@@ -96,7 +100,7 @@ class DataPreprocessor:
                                     previous_bb.get_result(syscall)
                             # call train_on for current iteration bbs
                             for current_bb in self._building_block_manager.building_block_generations[current_generation]:
-                                current_bb.train_on(syscall)
+                                current_bb.train_on(syscall, exploit_time)
                         self.new_recording()
 
             # validation
@@ -106,6 +110,10 @@ class DataPreprocessor:
                 for recording in tqdm(self._data_loader.validation_data(),
                                     f"val bb {current_generation + 1}/{num_generations}".rjust(27),
                                     unit=" recording"):
+                    if recording.metadata()["exploit"]:
+                        exploit_time = recording.metadata()["time"]["exploit"][0]["absolute"]
+                    else:
+                        exploit_time = None
                     for syscall in recording.syscalls():                        
                         # calculate already fitted bbs
                         for previous_generation in range(0, current_generation):
@@ -113,7 +121,7 @@ class DataPreprocessor:
                                 previous_bb.get_result(syscall)
                         # call val_on for current iteration bbs
                         for current_bb in self._building_block_manager.building_block_generations[current_generation]:
-                            current_bb.val_on(syscall)
+                            current_bb.val_on(syscall, exploit_time)
                     self.new_recording()            
 
             # fit current generation bbs

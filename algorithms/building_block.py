@@ -19,12 +19,12 @@ class BuildingBlock:
     def is_needtrain(self):
         return True
 
-    def train_on(self, syscall: Syscall):
+    def train_on(self, syscall: Syscall, exploit_time=None):
         """
         takes one system call to train this bb
         """
 
-    def val_on(self, syscall: Syscall):
+    def val_on(self, syscall: Syscall, exploit_time=None):
         """
         takes one system call to validate this bb on
         """

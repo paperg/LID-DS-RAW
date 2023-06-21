@@ -109,7 +109,7 @@ class LSTM(BuildingBlock):
                          batch_size=self._batch_size)
         self._lstm.to(device)
 
-    def train_on(self, syscall: Syscall):
+    def train_on(self, syscall: Syscall, exploit_time):
         """
 
         create training data and keep track of batch indices
@@ -121,8 +121,12 @@ class LSTM(BuildingBlock):
         """
         feature_list = self._input_vector.get_result(syscall)
         if self._lstm is None and feature_list is not None:
+            y = 0
+            if exploit_time:
+                syscall_time = syscall.timestamp_unix_in_ns() * (10 ** (-9))
+                if syscall_time > exploit_time:
+                    y = 1
             x = np.array(feature_list[1:])
-            y = feature_list[0]
             self._training_data['x'].append(x)
             self._training_data['y'].append(y)
             self._current_batch.append(self._batch_counter)
@@ -133,7 +137,7 @@ class LSTM(BuildingBlock):
         else:
             pass
 
-    def val_on(self, syscall: Syscall):
+    def val_on(self, syscall: Syscall, exploit_time):
         """
 
         create validation data and keep track of batch indices
@@ -145,8 +149,13 @@ class LSTM(BuildingBlock):
         """
         feature_list = self._input_vector.get_result(syscall)
         if self._lstm is None and feature_list is not None:
+            y = 0
+            if exploit_time:
+                syscall_time = syscall.timestamp_unix_in_ns() * (10 ** (-9))
+                if syscall_time > exploit_time:
+                    y = 1
+
             x = np.array(feature_list[1:])
-            y = feature_list[0]
             self._validation_data['x'].append(x)
             self._validation_data['y'].append(y)
             self._current_batch_val.append(self._batch_counter_val)
@@ -160,15 +169,15 @@ class LSTM(BuildingBlock):
     def _create_train_data(self, val: bool):
         if not val:
             x_tensors = Variable(torch.Tensor(self._training_data['x'])).to(self._device)
-            y_tensors = Variable(torch.Tensor(self._training_data['y'])).to(self._device)
-            y_tensors = y_tensors.long()
+            y_tensors = Variable(torch.Tensor(self._training_data['y']).unsqueeze(dim=1)).to(self._device)
+            # y_tensors = y_tensors.long()
             x_tensors_final = torch.reshape(x_tensors, (x_tensors.shape[0], 1, x_tensors.shape[1]))
             print(f"Training Shape x: {x_tensors_final.shape} y: {y_tensors.shape}")
             return SyscallFeatureDataSet(x_tensors_final, y_tensors), y_tensors
         else:
             x_tensors = Variable(torch.Tensor(self._validation_data['x'])).to(self._device)
-            y_tensors = Variable(torch.Tensor(self._validation_data['y'])).to(self._device)
-            y_tensors = y_tensors.long()
+            y_tensors = Variable(torch.Tensor(self._validation_data['y']).unsqueeze(dim=1)).to(self._device)
+            # y_tensors = y_tensors.long()
             x_tensors_final = torch.reshape(x_tensors, (x_tensors.shape[0], 1, x_tensors.shape[1]))
             print(f"Validation Shape x: {x_tensors_final.shape} y: {y_tensors.shape}")
             return SyscallFeatureDataSet(x_tensors_final, y_tensors), y_tensors
@@ -195,11 +204,11 @@ class LSTM(BuildingBlock):
             val_dataloader = DataLoader(val_dataset,
                                         batch_sampler=self._batch_indices_val)
             self._set_model(self._distinct_syscalls, self._device)
-            self._lstm.to(self._device)
+
             preds = []
             # Net hyperparameters
             learning_rate = 0.001
-            criterion = torch.nn.CrossEntropyLoss()
+            criterion = torch.nn.BCELoss()
             optimizer = torch.optim.Adam(self._lstm.parameters(),
                                          lr=learning_rate)
             self._hidden = None
@@ -222,8 +231,8 @@ class LSTM(BuildingBlock):
                     train_loss.backward()
                     # improve from loss, i.e backpro, val_loss: %1.5fp
                     optimizer.step()
-                    for j in range(len(outputs)):
-                        preds.append(torch.argmax(outputs[j]))
+
+                    preds.extend(outputs > 0.5)
                 accuracy = self._accuracy(preds, y_tensors)
                 preds = []
                 # reset hidden state
@@ -236,8 +245,7 @@ class LSTM(BuildingBlock):
                     optimizer.zero_grad()
                     loss = criterion(outputs, labels)
                     val_loss = loss.item() * inputs.size(0)
-                    for j in range(len(outputs)):
-                        preds.append(torch.argmax(outputs[j]))
+                    preds.extend(outputs > 0.5)
                 val_accuracy = self._accuracy(preds, y_tensors_val)
                 preds = []
                 print("Epoch: %d, loss: %1.5f, accuracy: %1.5f, val_loss: %1.5f,  val_accuracy: %1.5f" %
@@ -273,11 +281,11 @@ class LSTM(BuildingBlock):
                                             1,
                                             x_tensor.shape[1])).to(self._device)
             actual_syscall = feature_list[0]
-            prediction_logits, self._hidden = self._lstm(x_tensor_final,
-                                                         self._hidden)
-            softmax = nn.Softmax(dim=0)
-            predicted_prob = float(softmax(prediction_logits[0])[actual_syscall])
-            anomaly_score = 1 - predicted_prob
+            prediction_logits, self._hidden = self._lstm(x_tensor_final, self._hidden)
+            # softmax = nn.Softmax(dim=0)
+            # predicted_prob = float(softmax(prediction_logits[0])[actual_syscall])
+            # anomaly_score = 1 - predicted_prob
+            anomaly_score = float(prediction_logits[0][0])
             return anomaly_score
         else:
             return None
@@ -340,7 +348,7 @@ class Net(nn.Module):
                             num_layers=num_layers, batch_first=True)
         self.fc_1 = nn.Linear(hidden_size, 64)  # fully connected 1
         self.fc = nn.Linear(64, num_classes)  # fully connected last layer
-        self.output = nn.Linear(hidden_size, num_classes)  # fully connected 1
+        self.output = nn.Linear(hidden_size, 1)  # fully connected 1
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
         self._device = torch.device(device)
@@ -373,7 +381,7 @@ class Net(nn.Module):
         # reshaping the data for Dense layer next
         reshaped_hidden = hidden[0].view(-1, self.hidden_size)
         out = self.tanh(reshaped_hidden)
-        out = self.output(out)
+        out = torch.sigmoid(self.output(out))
         return out, hidden
 
 

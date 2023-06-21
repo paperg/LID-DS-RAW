@@ -48,7 +48,6 @@ if __name__ == '__main__':
         "CVE-2017-12635_6"
     ]
 
-    # todo: set config
     ###################
     # feature config:
     ngram_length = 7

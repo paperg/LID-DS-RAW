@@ -23,7 +23,7 @@ class MaxScoreThreshold(BuildingBlock):
     def depends_on(self):
         return self._dependency_list
 
-    def val_on(self, syscall: Syscall):
+    def val_on(self, syscall: Syscall, exploit_time):
         """
         save highest seen anomaly_score
         """

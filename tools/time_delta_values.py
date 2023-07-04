@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 import plotly.graph_objects as go
 import pandas as pd
-
+import os
 
 def calc_time_deltas(recording_list, max_delta, description):
     results = {
@@ -64,19 +64,25 @@ def calc_max_delta(recording_list, description):
 
 if __name__ == '__main__':
     SCENARIO_NAMES = [
+        "CWE-89-SQL-injection",
         # "Bruteforce_CWE-307",
         # "CVE-2012-2122",
         # "CVE-2014-0160"
         # "CVE-2017-7529",
         # "CVE-2018-3760",
-        "CVE-2019-5418",
+        # "CVE-2019-5418",
         # "PHP_CWE-434",
         # "EPS_CWE-434",
         # "ZipSlip"
     ]
+    LID_DS_BASE_PATH = 'K:/hids'
+
     for scenario in SCENARIO_NAMES:
         # scenario = 'CVE-2017-7529'
-        dataloader = dataloader_factory(f'../../Dataset/{scenario}/',
+        scenario_path = os.path.join(LID_DS_BASE_PATH,
+                                     "dataSet",
+                                     scenario)
+        dataloader = dataloader_factory(scenario_path,
                                         Direction.CLOSE)
         result_dict = {}
 

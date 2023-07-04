@@ -35,6 +35,7 @@ class SystemCallGraph(BuildingBlock):
         new_node = self._input.get_result(syscall)
         if new_node is not None:
             # check for threads
+            # do not use thread id for now
             tid = 0
             if self._thread_aware:
                 tid = syscall.thread_id()
@@ -44,6 +45,7 @@ class SystemCallGraph(BuildingBlock):
                 gid = syscall.thread_id()
 
             # check for graph
+            # TODO: self._graphs[] gid may change to proces name
             if gid not in self._graphs:
                 self._graphs[gid] = nx.DiGraph()
             

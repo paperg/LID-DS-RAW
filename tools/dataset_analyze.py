@@ -9,12 +9,17 @@ import numpy as np
 from tqdm import tqdm
 from rich.table import Table
 from rich import print as rptint
+import networkx as nx
 
 from dataloader.direction import Direction
 from dataloader.dataloader_factory import dataloader_factory
 from dataloader.data_loader_2021_df import DF_DataLoader2021
 from dataloader.data_loader_2021 import RecordingType
 from dataloader.data_loader_2021_df import RecordingType as DF_RecordingType
+
+from algorithms.features.impl.pname_ret import ProcessNameAndRet
+from algorithms.features.impl.int_embedding import IntEmbedding
+from algorithms.decision_engines.scg_gp import SystemCallGraph
 
 NORMAL = 'NORMAL'
 NORMAL_AND_ATTACK = 'NORMAL_AND_ATTACK'
@@ -233,7 +238,7 @@ def analyze_syscall_obj(dataloader, scenario_name):
             inter_persec = [0] * 21
             previous_time = 0
 
-            if recording_type == RecordingType.ATTACK or recording_type == NORMAL_AND_ATTACK:
+            if recording_type == RecordingType.ATTACK or recording_type == RecordingType.NORMAL_AND_ATTACK:
                 exploit_start_time = recording.metadata()["time"]["exploit"][0]["absolute"] * (10 ** 9)
                 # print(f'Attack file , exploit_start_time  {exploit_start_time}\n')
                 if exploit_start_time == 0:
@@ -326,8 +331,10 @@ def get_dataframe(dataloader, scenario_name):
 
                 if exploit_start_time != 0:
                     file_record[name + '.pkl'] = exploit_start_time
+                # 如果文件不存在
+                if os.path.exists(os.path.join(save_file_path, 'DataFrame', name + '.pkl')) is not True:
+                    sc_df.to_pickle(os.path.join(save_file_path, 'DataFrame', name + '.pkl'))
 
-                sc_df.to_pickle(os.path.join(save_file_path, 'DataFrame', name + '.pkl'))
                 if exploit_start_time != 0:
                     sc_df_nor = sc_df[sc_df['time'] < exploit_start_time]
                     sc_df_exp = sc_df[sc_df['time'] >= exploit_start_time]
@@ -365,6 +372,38 @@ def get_dataframe(dataloader, scenario_name):
         print(name)
         print(sc_df)
 
+def create_scg(dataloader, scenario_name):
+    save_file_path = os.path.join('./out', scenario_name)
+    if  os.path.exists(save_file_path) is not True:
+        os.mkdir(save_file_path)
+        os.mkdir(os.path.join(save_file_path, 'SCG'))
+
+
+    intEmbed = IntEmbedding(scenario_name = scenario_name)
+    pnr = ProcessNameAndRet(intEmbed)
+    sc = SystemCallGraph(pnr)
+
+    if intEmbed.need_train:
+        for recording in tqdm(dataloader.training_data(),
+                                  f"Handle {scenario_name} Train".rjust(27),
+                                  unit=" recording_train"):
+
+            for syscall in recording.syscalls():
+                intEmbed.train_on(syscall)
+
+        intEmbed.fit()
+
+    print('intEmbed train End')
+    for recording in tqdm(dataloader.training_data(),
+                                  f"Handle {scenario_name} Train".rjust(27),
+                                  unit=" recording_train"):
+        for syscall in recording.syscalls():
+            sc.train_on(syscall)
+
+    nx.write_multiline_adjlist(sc._graphs['mysqld'], './mysqld_scg', delimiter='|')
+    nx.write_multiline_adjlist(sc._graphs['apache2'], './apache2_scg', delimiter='|')
+    # sc.fit()
+
 if __name__ == '__main__':
 
     LID_DS_VERSION_NUMBER = 1
@@ -399,8 +438,8 @@ if __name__ == '__main__':
         scenario_path = os.path.join(LID_DS_BASE_PATH,
                                      "dataSet",
                                      scenario_name)
-        dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)
-        dataloader_df =  DF_DataLoader2021(scenario_path, direction=Direction.BOTH)
+        dataloader = dataloader_factory(scenario_path, direction=Direction.CLOSE)
+        # dataloader_df =  DF_DataLoader2021(scenario_path, direction=Direction.BOTH)
         '''
             class RecordingType(Enum):
                 NORMAL = 1
@@ -417,8 +456,9 @@ if __name__ == '__main__':
             TEST = 'test'
         '''
         # 统计文件个数
-        get_file_num(dataloader)
+        # get_file_num(dataloader)
         # analyze_syscall_obj(dataloader, scenario_name)
-        get_dataframe(dataloader_df, scenario_name)
+        # get_dataframe(dataloader_df, scenario_name)
+        create_scg(dataloader, scenario_name)
 
         print('Success')

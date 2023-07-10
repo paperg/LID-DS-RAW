@@ -21,6 +21,8 @@ from algorithms.features.impl.ngram_minus_one import NgramMinusOne
 from algorithms.features.impl.thread_change_flag import ThreadChangeFlag
 from algorithms.features.impl.max_score_threshold import MaxScoreThreshold
 from algorithms.features.impl.process_name import ProcessName
+from algorithms.features.impl.pname_ret import ProcessNameAndRet
+from algorithms.decision_engines.scg_gp import SystemCallGraph
 
 from algorithms.persistance import save_to_mongo
 
@@ -95,6 +97,9 @@ if __name__ == '__main__':
         if USE_TIME_DELTA:
             td = TimeDelta(thread_aware=True)
             feature_list.append(td)
+        pnr = ProcessNameAndRet(int_embedding)
+        sc = SystemCallGraph(pnr)
+        feature_list.append(sc)
         ngram = Ngram(
             feature_list=feature_list,
             thread_aware=THREAD_AWARE,
@@ -104,9 +109,8 @@ if __name__ == '__main__':
             ngram=ngram,
             element_size=element_size
         )
-        pname = ProcessName()
 
-        final_features = [pname, int_embedding, ngram_minus_one]
+        final_features = [int_embedding, ngram_minus_one]
         if USE_THREAD_CHANGE_FLAG:
             tcf = ThreadChangeFlag(ngram_minus_one)
             final_features.append(tcf)

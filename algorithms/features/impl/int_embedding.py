@@ -5,7 +5,7 @@ from algorithms.features.impl.syscall_name import SyscallName
 import torch
 import os
 
-INTEMBEDMODUE='./Models/IntEmbedding_Module'
+DEFAULT_DIR= 'K:/hids/Models'
 # 系统调用 name 转为 int
 class IntEmbedding(BuildingBlock):
     """
@@ -15,18 +15,23 @@ class IntEmbedding(BuildingBlock):
         building_block: BB which should be embedded as int
     """
 
-    def __init__(self, building_block: BuildingBlock = None):
+    def __init__(self, building_block: BuildingBlock = None, scenario_name:str = 'default'):
         super().__init__()
         self._syscall_dict = {}
         self.need_train = True
+        dir = os.path.join(DEFAULT_DIR,  scenario_name)
+        self.save_path = os.path.join(dir, 'IntEmbedding_model')
         if building_block is None:
             building_block = SyscallName()
         self._dependency_list = [building_block]
 
-        if os.path.exists(INTEMBEDMODUE):
-            self._syscall_dict = torch.load(INTEMBEDMODUE)
+        if os.path.exists(dir) is not True:
+            os.mkdir(dir)
+
+        if os.path.exists(self.save_path):
+            self._syscall_dict = torch.load(self.save_path)
             self.need_train = False
-            print('Load IntEmbedding Model From %s' % INTEMBEDMODUE)
+            print('Load IntEmbedding Model From %s' % self.save_path)
 
     def depends_on(self):
         return self._dependency_list
@@ -50,8 +55,8 @@ class IntEmbedding(BuildingBlock):
 
     def fit(self):
         if self.need_train:
-            torch.save(self._syscall_dict, INTEMBEDMODUE)
-            print("Save IntEmbedding Model To %s" % INTEMBEDMODUE)
+            torch.save(self._syscall_dict, self.save_path)
+            print("Save IntEmbedding Model To %s" % self.save_path)
 
     # 获取系统调用 name, 根据字典 _syscall_dict get index, or retuen 0
     def _calculate(self, syscall: Syscall):

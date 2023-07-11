@@ -263,6 +263,7 @@ class ImageNet(nn.Module):
                  dropout=0.1,
                  num_heads=8,
                  input_dim=64,
+                 _distinct_syscalls=61
                  ):
         super().__init__()
 
@@ -274,34 +275,17 @@ class ImageNet(nn.Module):
                                                      ffn_num_input,
                                                      ffn_num_hiddens, num_heads, num_layers, dropout)
 
-        self.attention = MultiHeadAttention(key_size, query_size, value_size, num_hiddens, 1, dropout)
+        self.decoder = nn.Linear(num_hiddens, _distinct_syscalls)
+        self.init_weights(self.decoder)
 
-        self.addnorm1 = AddNorm(norm_shape, dropout)
-        self.ffn = PositionWiseFFN(ffn_num_input, ffn_num_hiddens, num_hiddens)
-        self.addnorm2 = AddNorm(norm_shape, dropout)
+    def forward(self, X):
+        enc_outputs = self.transformer_encode(X, valid_lens=None)
+        return self.decoder(enc_outputs).view(-1, 61)
 
-        self.dense = nn.Linear(num_hiddens * 2, 61)
-
-    def forward(self, X , Image_X):
-        # 1. normal for Image_X
-        K = Image_X / 0xff
-
-        # 2. encoder for X using trnasfromer encode mode
-        Q = self.transformer_encode(X, None)
-
-        Q = Q.permute(1, 0, 2)
-        # 3. calculate the attention for Q and K
-        V = self.attention(Q, K, K, None)
-        Y = self.addnorm1(Q, V)
-        V = self.addnorm2(Y, self.ffn(Y))
-
-        input= torch.cat((Q, V), dim=2)
-        # 4. using V as input for liner layer to output label
-        out = nn.ReLU(inplace=True)(self.dense(input))
-
-        return out.view(out.shape[1], -1)
-
-
+    def init_weights(self, decoder):
+        initrange = 0.1
+        decoder.bias.data.zero_()
+        decoder.weight.data.uniform_(-initrange, initrange)
 class ImageIDS(BuildingBlock):
     def __init__(self,
                  input_vector: BuildingBlock,
@@ -313,13 +297,24 @@ class ImageIDS(BuildingBlock):
                  hidden_layers=4,
                  batch_size=64,
                  model_path='Models/Transformer',
-                 force_train=False):
-
+                 force_train=False,
+                 _scg=None):
+        """
+        Args:
+            distinct_syscalls:  amount of distinct syscalls in training data
+            input_dim:          input dimension
+            epochs:             set training epochs of LSTM
+            hidden_layers:      amount of LSTM-layers
+            hidden_dim:         dimension of LSTM-layer
+            batch_size:         set maximum batch_size
+            model_path:         path to save trained Net to
+            force_train:        force training of Net
+        """
         super().__init__()
         self._input_vector = input_vector
         self._dependency_list = [input_vector]
         self._distinct_syscalls = distinct_syscalls + 1
-
+        self._scg = _scg
         # hyper parameter
         self._dropout = dropout
         self._input_dim = input_dim
@@ -341,9 +336,6 @@ class ImageIDS(BuildingBlock):
             'y': []
         }
 
-        self._training_name = {}
-        self._validation_name = {}
-
         self._state = 'build_training_data'
         self._transformer = None
         self._batch_indices = []
@@ -353,11 +345,11 @@ class ImageIDS(BuildingBlock):
         self._batch_counter = 0
         self._batch_counter_val = 0
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.Net = ImageNet(self._input_dim, self._hidden_layers, self._dropout, self._num_head, self._input_dim)
+        self.Net = ImageNet(self._input_dim, self._hidden_layers, self._dropout, self._num_head, self._input_dim, self._distinct_syscalls)
         self.Net.to(self._device)
 
-    def forward(self, X, Image_X):
-        return self.Net(X, Image_X)
+    def forward(self, X):
+        return self.Net(X)
 
     def depends_on(self):
         return self._dependency_list
@@ -372,26 +364,12 @@ class ImageIDS(BuildingBlock):
             feature_list (int): list of prepared features for DE
 
         """
-
         feature_list = self._input_vector.get_result(syscall)
         if feature_list is not None:
-            x = np.array(feature_list[2:])
-            y = feature_list[1]
-            pname = feature_list[0]
-            if pname in self._training_name.keys():
-                self._training_name[pname]['x'].append(x)
-                self._training_name[pname]['y'].append(y)
-                self._training_name[pname]['pname'].append(pname)
-            else:
-                if pname == '<NA>':
-                    return
-                self._training_name[pname] = {}
-                self._training_name[pname]['x'] = [x]
-                self._training_name[pname]['y'] = [y]
-                self._training_name[pname]['pname'] = [pname]
-
-            # self._training_data['x'].append(x)
-            # self._training_data['y'].append(y)
+            x = np.array(feature_list[1:])
+            y = feature_list[0]
+            self._training_data['x'].append(x)
+            self._training_data['y'].append(y)
             self._current_batch.append(self._batch_counter)
             self._batch_counter += 1
             if len(self._current_batch) == self._batch_size:
@@ -412,26 +390,10 @@ class ImageIDS(BuildingBlock):
         """
         feature_list = self._input_vector.get_result(syscall)
         if feature_list is not None:
-            x = np.array(feature_list[2:])
-            y = feature_list[1]
-            pname = feature_list[0]
-            # self._validation_name['pname'].append(pname)
-            # self._validation_name[pname]['x'].append(x)
-            # self._validation_name[pname]['y'].append(y)
-
-            if pname in self._validation_name.keys():
-                self._validation_name[pname]['x'].append(x)
-                self._validation_name[pname]['y'].append(y)
-                self._validation_name[pname]['pname'].append(pname)
-            else:
-                if pname == '<NA>':
-                    return
-                self._validation_name[pname] = {}
-                self._validation_name[pname]['x'] = [x]
-                self._validation_name[pname]['y'] = [y]
-                self._validation_name[pname]['pname'] = [pname]
-            # self._validation_data['x'].append(x)
-            # self._validation_data['y'].append(y)
+            x = np.array(feature_list[1:])
+            y = feature_list[0]
+            self._validation_data['x'].append(x)
+            self._validation_data['y'].append(y)
             self._current_batch_val.append(self._batch_counter_val)
             self._batch_counter_val += 1
             if len(self._current_batch_val) == self._batch_size:
@@ -442,35 +404,19 @@ class ImageIDS(BuildingBlock):
 
     def _create_train_data(self, val: bool):
         if not val:
-            _training_data = {'x': [], 'y': [], 'pname': []}
-            for key in self._training_name.keys():
-                if key== '<NA>':
-                    continue
-                _training_data['x'].extend(self._training_name[key]['x'])
-                _training_data['y'].extend(self._training_name[key]['y'])
-                _training_data['pname'].extend(self._training_name[key]['pname'])
-
-            x_tensors = Variable(torch.Tensor(_training_data['x'])).to(self._device)
-            y_tensors = Variable(torch.Tensor(_training_data['y'])).to(self._device)
+            x_tensors = Variable(torch.Tensor(self._training_data['x'])).to(self._device)
+            y_tensors = Variable(torch.Tensor(self._training_data['y'])).to(self._device)
             y_tensors = y_tensors.long()
             x_tensors_final = torch.reshape(x_tensors, (x_tensors.shape[0], 1, x_tensors.shape[1]))
             print(f"Training Shape x: {x_tensors_final.shape} y: {y_tensors.shape}")
-            return SyscallFeatureDataSet(x_tensors_final, y_tensors, _training_data['pname']), y_tensors
+            return SyscallFeatureDataSet(x_tensors_final, y_tensors), y_tensors
         else:
-            _validation_data = {'x': [], 'y': [], 'pname': []}
-            for key in self._validation_name.keys():
-                if key== '<NA>':
-                    continue
-                _validation_data['x'].extend(self._validation_name[key]['x'])
-                _validation_data['y'].extend(self._validation_name[key]['y'])
-                _validation_data['pname'].extend(self._validation_name[key]['pname'])
-
-            x_tensors = Variable(torch.Tensor(_validation_data['x'])).to(self._device)
-            y_tensors = Variable(torch.Tensor(_validation_data['y'])).to(self._device)
+            x_tensors = Variable(torch.Tensor(self._validation_data['x'])).to(self._device)
+            y_tensors = Variable(torch.Tensor(self._validation_data['y'])).to(self._device)
             y_tensors = y_tensors.long()
             x_tensors_final = torch.reshape(x_tensors, (x_tensors.shape[0], 1, x_tensors.shape[1]))
             print(f"Validation Shape x: {x_tensors_final.shape} y: {y_tensors.shape}")
-            return SyscallFeatureDataSet(x_tensors_final, y_tensors, _validation_data['pname']), y_tensors
+            return SyscallFeatureDataSet(x_tensors_final, y_tensors), y_tensors
 
     def fit(self):
         """
@@ -492,17 +438,6 @@ class ImageIDS(BuildingBlock):
                     if "weight" in param:
                         nn.init.xavier_uniform_(m._parameters[param])
 
-        self.Image = {}
-        f = open('K:\hids\dataSet\Image\\apache2', "rb")
-        hex_list = [c for c in f.read()]
-        f.close()
-        self.Image['apache2'] = torch.stack(torch.Tensor(hex_list).split(64)[:-1]).unsqueeze(0).to(self._device)
-
-        f = open('K:\hids\dataSet\Image\\mysql', "rb")
-        hex_list = [c for c in f.read()]
-        f.close()
-        self.Image['mysqld'] = torch.stack(torch.Tensor(hex_list).split(64)[:-1]).unsqueeze(0).to(self._device)
-
         if self._state == 'build_training_data':
             self._state = 'fitting'
         if self.Net is not None:
@@ -522,9 +457,9 @@ class ImageIDS(BuildingBlock):
                               'training network:'.rjust(25),
                               unit=" epochs"):
                 for i, data in enumerate(train_dataloader, 0):
-                    inputs, labels, proname = data
+                    inputs, labels = data
                     # def forward(self, X, Image_X)
-                    outputs = self.Net.forward(inputs, self.Image[proname[0]])
+                    outputs = self.Net.forward(inputs)
                     optimizer.zero_grad()
                     # obtain the loss function
                     train_loss = criterion(outputs, labels)
@@ -540,8 +475,8 @@ class ImageIDS(BuildingBlock):
                 self.new_recording()
                 val_loss = 0.0
                 for data in val_dataloader:
-                    inputs, labels, proname = data
-                    outputs = self.Net.forward(inputs, self.Image[proname[0]])
+                    inputs, labels = data
+                    outputs = self.Net.forward(inputs)
                     optimizer.zero_grad()
                     loss = criterion(outputs, labels)
                     val_loss = loss.item() * inputs.size(0)
@@ -575,14 +510,13 @@ class ImageIDS(BuildingBlock):
         """
         feature_list = self._input_vector.get_result(syscall)
         if feature_list:
-            pname = feature_list[0]
-            x_tensor = Variable(torch.Tensor(np.array([feature_list[2:]])))
+            x_tensor = Variable(torch.Tensor(np.array([feature_list[1:]])))
             x_tensor_final = torch.reshape(x_tensor,
                                            (x_tensor.shape[0],
                                             1,
                                             x_tensor.shape[1])).to(self._device)
-            actual_syscall = feature_list[1]
-            prediction_logits  = self.Net(x_tensor_final, self.Image[pname])
+            actual_syscall = feature_list[0]
+            prediction_logits  = self.Net(x_tensor_final)
             softmax = nn.Softmax(dim=0)
             predicted_prob = float(softmax(prediction_logits[0])[actual_syscall])
             anomaly_score = 1 - predicted_prob
@@ -637,10 +571,10 @@ class EncoderDecoder(nn.Module):
 
 class SyscallFeatureDataSet(Dataset):
 
-    def __init__(self, X, Y, pname):
+    def __init__(self, X, Y):
         self.X = X
         self.Y = Y
-        self.name = pname
+
         if len(self.X) != len(self.Y):
             raise Exception("The length of X does not match length of Y")
 
@@ -650,4 +584,4 @@ class SyscallFeatureDataSet(Dataset):
     def __getitem__(self, index):
         _x = self.X[index]
         _y = self.Y[index]
-        return _x, _y, self.name[index]
+        return _x, _y

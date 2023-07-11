@@ -65,12 +65,13 @@ if __name__ == '__main__':
     NUM_HEAD = 8
 
     NGRAM_LENGTH = 9
-    EMBEDDING_SIZE = 5
+    EMBEDDING_SIZE = 4
     THREAD_AWARE = True
     BATCH_SIZE = 1024
     USE_THREAD_CHANGE_FLAG = True
     USE_RETURN_VALUE = True
     USE_TIME_DELTA = True
+    USE_SCG = True
 
 
     # getting the LID-DS base path from argument or environment variable
@@ -83,7 +84,7 @@ if __name__ == '__main__':
 
         # data loader for scenario
         dataloader = dataloader_factory(scenario_path, direction=Direction.CLOSE)
-        element_size = EMBEDDING_SIZE + USE_RETURN_VALUE + USE_TIME_DELTA
+        element_size = EMBEDDING_SIZE + USE_RETURN_VALUE + USE_TIME_DELTA + USE_SCG
         # embedding
         int_embedding = IntEmbedding()
         w2v = W2VEmbedding(word=int_embedding,
@@ -100,6 +101,7 @@ if __name__ == '__main__':
         pnr = ProcessNameAndRet(int_embedding)
         sc = SystemCallGraph(pnr)
         feature_list.append(sc)
+
         ngram = Ngram(
             feature_list=feature_list,
             thread_aware=THREAD_AWARE,
@@ -144,7 +146,8 @@ if __name__ == '__main__':
                     hidden_layers=HIDDEN_LAYERS,
                     batch_size=BATCH_SIZE,
                     model_path=model_path,
-                    force_train=False)
+                    force_train=False,
+                    _scg=sc)
 
         decider = MaxScoreThreshold(transAM)
         # define the used features
@@ -172,5 +175,5 @@ if __name__ == '__main__':
         results['date'] = str(datetime.now().date())
         results['scenario'] = scenario_name
         results['detection_time'] = detection_time
-        results['Model'] = 'Transforer_Image_two_Encoder'
+        results['Model'] = 'Transforer_SSG'
         save_to_mongo(results)

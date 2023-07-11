@@ -90,6 +90,8 @@ class DataPreprocessor:
                                         f"train bb {current_generation + 1}/{num_generations}".rjust(27),
                                         unit=" recording"):
                         for syscall in recording.syscalls():
+                            if syscall.process_name() not in ['mysqld', 'apache2']:
+                                continue
                             # calculate already fitted bbs
                             for previous_generation in range(0, current_generation):
                                 for previous_bb in self._building_block_manager.building_block_generations[previous_generation]:
@@ -106,7 +108,9 @@ class DataPreprocessor:
                 for recording in tqdm(self._data_loader.validation_data(),
                                     f"val bb {current_generation + 1}/{num_generations}".rjust(27),
                                     unit=" recording"):
-                    for syscall in recording.syscalls():                        
+                    for syscall in recording.syscalls():
+                        if syscall.process_name() not in ['mysqld', 'apache2']:
+                            continue
                         # calculate already fitted bbs
                         for previous_generation in range(0, current_generation):
                             for previous_bb in self._building_block_manager.building_block_generations[previous_generation]:                            

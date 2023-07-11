@@ -15,7 +15,7 @@ class SystemCallGraph(BuildingBlock):
         # internal data
         self._graphs = {}
         self._last_added_nodes = {}
-        self._result_dict = {}
+        self._result_dict = {'mysqld':{}, 'apache2':{}}
 
         # dependency list
         self._dependency_list = []
@@ -97,22 +97,26 @@ class SystemCallGraph(BuildingBlock):
         if new_node is not None:
             # the thread id
             tid = syscall.thread_id()
+            pname = syscall.process_name()
 
             if tid in self._last_added_nodes:
                 # is the result already calculated?
                 s = self._last_added_nodes[tid]
                 t = new_node
                 edge = tuple([s, t])
-                if edge in self._result_dict:
+                if pname not in ['mysqld', 'apache2']:
+                    print(f'{pname} is invalid')
+                if edge in self._result_dict[pname]:
                     self._last_added_nodes[tid] = new_node
-                    return self._result_dict[edge]
+                    return self._result_dict[pname][edge]
                 else:
                     # was not the first node for this tid
                     transition_probability = 0
-                    for g in self._graphs.values():
-                        if g.has_edge(s, t):
-                            transition_probability += g[s][t]["p"]
-                    self._result_dict[edge] = transition_probability
+
+                    g = self._graphs[pname]
+                    if g.has_edge(s, t):
+                        transition_probability += g[s][t]["p"]
+                    self._result_dict[pname][edge] = transition_probability
                     self._last_added_nodes[tid] = new_node
                     return transition_probability
             else:

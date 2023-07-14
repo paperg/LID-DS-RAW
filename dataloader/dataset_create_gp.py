@@ -97,7 +97,7 @@ if __name__ == '__main__':
         intEmbed = IntEmbedding(scenario_name=scenario_name)
         pnr = ProcessNameAndRet(intEmbed)
 
-        dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)
+        dataloader = dataloader_factory(scenario_path, direction=Direction.CLOSE)
 
         # create_scg(dataloader, scenario_name)
         # features

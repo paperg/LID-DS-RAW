@@ -57,7 +57,9 @@ class DF_Recording2021(BaseRecording):
             with zipfile.ZipFile(self.path, 'r') as zipped:
                 with zipped.open(self.name + '.sc') as unzipped:
                     df = pd.read_csv(unzipped, delim_whitespace = True, index_col=False, names = ['time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'ARGS'])
-                    yield df, self.name
+                    df.time = pd.to_datetime(df['time'])
+                    for period_time, period_cont in df.resample('900L', on='time'):
+                        yield period_cont
                     # for line_id, syscall in enumerate(unzipped, start=1):
                     #     syscall_object = Syscall2021(self.path, syscall.decode('utf-8').rstrip(), line_id=line_id)
                     #     if self._direction != Direction.BOTH:

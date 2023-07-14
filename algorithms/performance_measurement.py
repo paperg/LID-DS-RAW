@@ -53,14 +53,14 @@ class Performance:
     def set_exploit_time(self, exploit_time):
         self._current_exploit_time = exploit_time
 
-    def analyze_syscall(self, syscall: Syscall, is_anomaly: bool):
+    def analyze_syscall(self, syscall, is_anomaly: bool):
         """
         counts performance values with syscall and anomaly score as input,
         differentiates between normal and exploit files
         """
 
-        syscall_time = syscall.timestamp_unix_in_ns() * (10 ** (-9))
-
+        # syscall_time = syscall.timestamp_unix_in_ns() * (10 ** (-9))
+        syscall_time = syscall.iloc[-1]['time'].timestamp()
         # files with exploit
         if self._current_exploit_time is not None:
             # 异常文件中， _exploit_anomaly_score_count 序列的计数

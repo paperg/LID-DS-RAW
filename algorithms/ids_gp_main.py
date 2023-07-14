@@ -19,9 +19,13 @@ from algorithms.decision_engines.scg import SystemCallGraph
 from algorithms.features.impl.return_value import ReturnValue
 from algorithms.features.impl.ngram import Ngram
 from algorithms.features.impl.w2v_embedding import W2VEmbedding
+from algorithms.features.impl.usi import Usi
+from algorithms.features.impl.sequence_period import Sequence_period
+from algorithms.features.impl.seen_syscall_list import SeenSysC
 
 from dataloader.dataloader_factory import dataloader_factory
 
+from algorithms.decision_engines.gp_model_endecoder import GP_Encoder_Decoder
 
 if __name__ == '__main__':
 
@@ -66,6 +70,12 @@ if __name__ == '__main__':
 
         dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)
 
+        seq_period = Sequence_period()
+        ssc = SeenSysC()
+        usi = Usi(seq_period, ssc)
+
+        ed = GP_Encoder_Decoder(usi, 1)
+
         # features
         # 'time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'ARGS'
         # 1. 每秒 时间间隔 数量， 针对每一项进行频率统计
@@ -75,16 +85,16 @@ if __name__ == '__main__':
         # TODO: ARGs Analysis
         ###################
 
-        syscallName = SyscallName()
-        intEmbedding = IntEmbedding(syscallName)
-
-        td = TimeDelta(thread_aware=True)
-        rv = ReturnValue()
-        ngram = Ngram([intEmbedding, rv], THREAD_AWARE, NGRAM_LENGTH)
-
-        scg = SystemCallGraph(ngram)
-
-        decider = MaxScoreThreshold(scg)
+        # syscallName = SyscallName()
+        # intEmbedding = IntEmbedding(syscallName)
+        #
+        # td = TimeDelta(thread_aware=True)
+        # rv = ReturnValue()
+        # ngram = Ngram([intEmbedding, rv], THREAD_AWARE, NGRAM_LENGTH)
+        #
+        # scg = SystemCallGraph(ngram)
+        #
+        decider = MaxScoreThreshold(ed)
 
         ###################
         # the IDS
@@ -93,24 +103,24 @@ if __name__ == '__main__':
                   create_alarms=False,
                   plot_switch=False)
 
-        # ids.determine_threshold()
-        # # detection
-        # performance = ids.detect()
+        ids.determine_threshold()
+        # detection
+        performance = ids.detect()
         #
-        # results = performance.get_results()
+        results = performance.get_results()
         #
-        # pprint(results)
-        #
-        # # enrich results with configuration and save to mongoDB
-        # results['config'] = ids.get_config_tree_links()
-        # results['scenario'] = scenario_name
-        # results['ngram_length'] = NGRAM_LENGTH
-        # results['thread_aware'] = THREAD_AWARE
-        # results['w2v_size'] = W2V_SIZE
-        # results['dataset'] = LID_DS_VERSION[LID_DS_VERSION_NUMBER]
-        # results['direction'] = dataloader.get_direction_string()
-        # results['date'] = str(datetime.now().date())
-        # results['model'] = "IDS-SCG"
+        pprint(results)
+
+        # enrich results with configuration and save to mongoDB
+        results['config'] = ids.get_config_tree_links()
+        results['scenario'] = scenario_name
+        results['ngram_length'] = NGRAM_LENGTH
+        results['thread_aware'] = THREAD_AWARE
+        results['w2v_size'] = W2V_SIZE
+        results['dataset'] = LID_DS_VERSION[LID_DS_VERSION_NUMBER]
+        results['direction'] = dataloader.get_direction_string()
+        results['date'] = str(datetime.now().date())
+        results['model'] = "IDS-SCG"
         #
         # save_to_mongo(results)
 

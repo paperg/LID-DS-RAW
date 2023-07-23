@@ -59,8 +59,8 @@ class Performance:
         differentiates between normal and exploit files
         """
 
-        # syscall_time = syscall.timestamp_unix_in_ns() * (10 ** (-9))
-        syscall_time = syscall.iloc[-1]['time'].timestamp()
+        syscall_time = syscall.timestamp_unix_in_ns() * (10 ** (-9))
+        # syscall_time = syscall.iloc[-1]['time'].timestamp()
         # files with exploit
         if self._current_exploit_time is not None:
             # 异常文件中， _exploit_anomaly_score_count 序列的计数

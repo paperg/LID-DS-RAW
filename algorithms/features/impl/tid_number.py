@@ -3,7 +3,7 @@
 from algorithms.building_block import BuildingBlock
 from dataloader.syscall import Syscall
 
-class SeenSysC(BuildingBlock):
+class TidNumber(BuildingBlock):
     """
      calculate Un seen interface
     """
@@ -12,22 +12,20 @@ class SeenSysC(BuildingBlock):
         """
         """
         super().__init__()
-        self.seen_syscalls = set()
+        # depands on Seen syscall list and sequence per period
         self._intput_block = intput_block
         self._dependency_list = [intput_block]
+        self.ssg_edges = []
     def depends_on(self):
         return self._dependency_list
 
-    def train_on(self, syscall):
+    def _calculate(self, syscall):
         seq_df = self._intput_block.get_result(syscall)
         if seq_df is not None:
-            self.seen_syscalls = self.seen_syscalls | set(seq_df['syscallInt'].unique())
+            maxval = seq_df['TID'].value_counts().max()
+            if maxval > 10000:
+                print(f'Max Tid value {maxval}')
 
-    def _calculate(self, syscall):
-        return None
+            return maxval // 10000
 
-    def get_seen_sc(self):
-        if len(self.seen_syscalls) > 0:
-            return self.seen_syscalls
-
-        return None
+        return 0

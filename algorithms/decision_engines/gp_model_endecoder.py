@@ -48,6 +48,7 @@ class GP_Encoder_Decoder(BuildingBlock):
     def __init__(self, input_vector: BuildingBlock, input_dim: int, epochs=200, batch_size=50):
         super().__init__()
 
+        self._input_dim = input_dim
         self._epochs = epochs
         self._batch_size = batch_size
         # input_vector is USI currently
@@ -127,7 +128,7 @@ class GP_Encoder_Decoder(BuildingBlock):
                               unit=" epochs"):
                 self.model.train()
                 for i, data in enumerate(train_dataloader, 0):
-                    data = data.reshape(-1, 1)
+                    data = data.reshape(-1, self._input_dim)
                     outputs = self.model(data)
                     optimizer.zero_grad()
                     classify_loss = criterion(outputs, data)
@@ -143,7 +144,7 @@ class GP_Encoder_Decoder(BuildingBlock):
                 self.model.eval()
                 val_loss = 0.0
                 for data in val_dataloader:
-                    data = data.reshape(-1, 1)
+                    data = data.reshape(-1, self._input_dim)
                     outputs = self.model(data)
                     optimizer.zero_grad()
                     val_loss = criterion(outputs, data)
@@ -155,11 +156,11 @@ class GP_Encoder_Decoder(BuildingBlock):
         feature_list = self._input_vector.get_result(syscall)
         if feature_list is not None:
             x_tensor = Variable(torch.Tensor([feature_list]))
-            x_tensor_final = torch.reshape(x_tensor, (-1, 1)).to(self._device)
+            x_tensor_final = torch.reshape(x_tensor, (-1, self._input_dim)).to(self._device)
 
             prediction_logits  = self.model(x_tensor_final)
             training_reconstruction_errors = prediction_logits.cpu().detach()[0][0].item()
-            print(f'USI {x_tensor_final} mode calculate result {training_reconstruction_errors}')
+            print(f'Input {x_tensor_final} mode calculate result {training_reconstruction_errors}')
             return training_reconstruction_errors
         else:
             return None

@@ -32,12 +32,12 @@ class Usi(BuildingBlock):
     def _calculate(self, syscall):
         seq_df = self._intput_block.get_result(syscall)
         if seq_df is not None:
-            seq_sc = list(seq_df['syscall'].unique())
+            seq_sc = list(seq_df['syscallInt'].unique())
             distinct_unseen_syscalls = (set(seq_sc) - self._seen_syscalls)
             if distinct_unseen_syscalls:
                 seq_df.loc[~seq_df.syscall.isin(self._seen_syscalls), 'syscall'] = 'USN'
 
-                syscalls_list = seq_df['syscall'].to_list()
+                syscalls_list = seq_df['syscallInt'].to_list()
                 for i in range(len(syscalls_list) - 1):
                     self.ssg_edges.append((syscalls_list[i], syscalls_list[i + 1]))
 

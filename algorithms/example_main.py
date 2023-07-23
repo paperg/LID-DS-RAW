@@ -30,23 +30,26 @@ from algorithms.persistance import save_to_mongo
 if __name__ == '__main__':
 
     # getting the LID-DS base path from argument or environment variable
-    if len(sys.argv) > 1:
-        LID_DS_BASE_PATH = sys.argv[1]
-    else:
-        try:
-            LID_DS_BASE_PATH = os.environ['LID_DS_BASE']
-        except KeyError as exc:
-            raise ValueError("No LID-DS Base Path given."
-                             "Please specify as argument or set Environment Variable "
-                             "$LID_DS_BASE") from exc
+    # if len(sys.argv) > 1:
+    #     LID_DS_BASE_PATH = sys.argv[1]
+    # else:
+    #     try:
+    #         LID_DS_BASE_PATH = os.environ['LID_DS_BASE']
+    #     except KeyError as exc:
+    #         raise ValueError("No LID-DS Base Path given."
+    #                          "Please specify as argument or set Environment Variable "
+    #                          "$LID_DS_BASE") from exc
 
+    LID_DS_BASE_PATH = 'K:/hids'
     LID_DS_VERSION = "LID-DS-2019"
-    SCENARIO_NAME = "CVE-2017-7529"
+    SCENARIO_NAME = "CWE-89-SQL-injection"
     #scenario_name = "CVE-2014-0160"
     #scenario_name = "Bruteforce_CWE-307"
     #scenario_name = "CVE-2012-2122"
-
-    scenario_path = f"{LID_DS_BASE_PATH}/{LID_DS_VERSION}/{SCENARIO_NAME}"
+    scenario_path = os.path.join(LID_DS_BASE_PATH,
+                                 "dataSet",
+                                 SCENARIO_NAME)
+    # scenario_path = f"{LID_DS_BASE_PATH}/{LID_DS_VERSION}/{SCENARIO_NAME}"
     # just load < closing system calls for this example
     dataloader = dataloader_factory(scenario_path,direction=Direction.BOTH)
 

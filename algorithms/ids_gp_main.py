@@ -19,10 +19,15 @@ from algorithms.decision_engines.scg import SystemCallGraph
 from algorithms.features.impl.return_value import ReturnValue
 from algorithms.features.impl.ngram import Ngram
 from algorithms.features.impl.w2v_embedding import W2VEmbedding
+from algorithms.features.impl.concat import Concat
 from algorithms.features.impl.usi import Usi
+from algorithms.features.impl.tid_number import TidNumber
 from algorithms.features.impl.sequence_period import Sequence_period
 from algorithms.features.impl.seen_syscall_list import SeenSysC
+from algorithms.features.impl.scg_sc_freq import Syscall_Frequency
+from algorithms.features.impl.gp_scg_period import Scg_Seq
 
+from dataloader.data_loader_2021_df import DF_DataLoader2021
 from dataloader.dataloader_factory import dataloader_factory
 
 from algorithms.decision_engines.gp_model_endecoder import GP_Encoder_Decoder
@@ -68,13 +73,18 @@ if __name__ == '__main__':
                                      "dataSet",
                                      scenario_name)
 
-        dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)
+        dataloader = DF_DataLoader2021(scenario_path, direction=Direction.BOTH)
 
         seq_period = Sequence_period()
-        ssc = SeenSysC()
+        ssc = SeenSysC(seq_period)
         usi = Usi(seq_period, ssc)
+        ss = Scg_Seq(seq_period)
+        # tn = TidNumber(seq_period)
+        sf = Syscall_Frequency(ss)
+        features = [usi, sf]
+        concat = Concat(features)
 
-        ed = GP_Encoder_Decoder(usi, 1)
+        ed = GP_Encoder_Decoder(concat, len(features))
 
         # features
         # 'time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'ARGS'

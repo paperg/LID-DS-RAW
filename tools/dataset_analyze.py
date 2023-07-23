@@ -374,9 +374,11 @@ def get_dataframe(dataloader, scenario_name):
 
 def create_scg(dataloader, scenario_name):
     save_file_path = os.path.join('./out', scenario_name)
+    scg_save_path = os.path.join(save_file_path, 'SCG')
     if  os.path.exists(save_file_path) is not True:
         os.mkdir(save_file_path)
-        os.mkdir(os.path.join(save_file_path, 'SCG'))
+    if  os.path.exists(scg_save_path) is not True:
+        os.mkdir(scg_save_path)
 
 
     intEmbed = IntEmbedding(scenario_name = scenario_name)
@@ -400,8 +402,8 @@ def create_scg(dataloader, scenario_name):
         for syscall in recording.syscalls():
             sc.train_on(syscall)
 
-    nx.write_multiline_adjlist(sc._graphs['mysqld'], './mysqld_scg', delimiter='|')
-    nx.write_multiline_adjlist(sc._graphs['apache2'], './apache2_scg', delimiter='|')
+    nx.write_multiline_adjlist(sc._graphs['mysqld'], os.path.join(scg_save_path, 'mysqld_scg'), delimiter='|')
+    nx.write_multiline_adjlist(sc._graphs['apache2'], os.path.join(scg_save_path, 'apache2_scg') , delimiter='|')
     # sc.fit()
 
 if __name__ == '__main__':

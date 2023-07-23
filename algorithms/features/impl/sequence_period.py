@@ -8,26 +8,25 @@ class Sequence_period(BuildingBlock):
     def __init__(self):
 
         super().__init__()
-        self.start_time = 0
-        self.seq_df = pd.DataFrame(columns=['ProcessName', 'TID', 'syscall'])
+        # self.seq_df = pd.DataFrame(columns=['time', 'ProcessName', 'TID', 'syscallInt'])
 
     def depends_on(self):
         return []
 
     def _calculate(self, syscall):
-
-        return syscall[['ProcessName', 'TID', 'syscall']]
-        # self.seq_df.append([syscall.process_name(), syscall.thread_id(), syscall.name()])
-        # if self.start_time == 0:
-        #     self.start_time = syscall.timestamp_unix_in_ns()
-        #     return None
-        #
+        return syscall
+        # return syscall[['ProcessName', 'TID', 'syscall']]
         # current_time = syscall.timestamp_unix_in_ns()
-        # if current_time - self.start_time > 1000000000:
-        #     self.start_time = 0
-        #     df_ret = self.seq_df.copy(deep=True)
-        #     self.seq_df.drop(self.seq_df.index, inplace=True)
-        #     return df_ret
+        # df_new_item = pd.DataFrame([[current_time, syscall.process_name(), syscall.thread_id(), syscall.name()]],
+        #                    columns=['time', 'ProcessName', 'TID', 'syscall'])
+        # self.seq_df = self.seq_df.append(df_new_item, ignore_index=True)
+        #
+        # if current_time - self.seq_df.at[0, 'time'] > 1000000000:
+        #     result = self.seq_df.copy(deep=True)
+        #     self.seq_df.drop(self.seq_df.index[[i for i in range(len(self.seq_df[self.seq_df['time'] < self.seq_df.at[0, 'time'] + 200000000]))]], inplace=True)
+        #     self.seq_df.reset_index(drop=True, inplace=True)
+        #
+        #     return result
         #
         # return None
 

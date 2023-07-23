@@ -24,6 +24,11 @@ class SystemCallGraph(BuildingBlock):
     def depends_on(self):
         return self._dependency_list
 
+    def remove_empty_node(self, process_name, node):
+        if self._graphs[process_name].has_node(node):
+            if self._graphs[process_name].degree(node) == 0:
+                self._graphs[process_name].remove_node(node)
+                # print(f'remove Node {node}')
     def remove_one_edge(self, process_name, src_node, target_node):
         # if has a edge form src_node to target_node, remove it
         if self._graphs[process_name].has_edge(src_node, target_node):
@@ -33,6 +38,9 @@ class SystemCallGraph(BuildingBlock):
                 self._graphs[process_name].add_edge(src_node, target_node, f=count)
             else:
                 self._graphs[process_name].remove_edge(src_node, target_node)
+                if self._graphs[process_name].degree(src_node) == 0:
+                    self._graphs[process_name].remove_node(src_node)
+                    # print(f'remove Node {src_node}')
         else:
             print("no edge from src_node to target_node")
     def train_on(self, syscall: Syscall):

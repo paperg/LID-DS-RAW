@@ -4,7 +4,7 @@ from dataloader.direction import Direction
 from dataloader.base_data_loader import BaseDataLoader
 from dataloader.data_loader_2019 import DataLoader2019
 from dataloader.data_loader_2021 import DataLoader2021
-from dataloader.data_loader_2021_df import DF_DataLoader2021
+# from dataloader.data_loader_2021_df import DF_DataLoader2021
 from dataloader.dataloader_adfa_ld import DataLoaderADFALD
 from dataloader.dataloader_real_world import DataLoaderRealWorld
 
@@ -41,8 +41,8 @@ def dataloader_factory(scenario_path: str, direction: Direction = Direction.OPEN
                 _, sub_file_extension = path.splitext(example_file)
                 if sub_file_extension == '.zip':
                     print('LID-DS 2021 detected, initializing Dataloader')
-                    # return DataLoader2021(scenario_path, direction)
-                    return DF_DataLoader2021(scenario_path, direction)
+                    return DataLoader2021(scenario_path, direction)
+                    # return DF_DataLoader2021(scenario_path, direction)
 
                 else:
                     raise_value_error()

@@ -4,12 +4,14 @@ import json
 import pcapkit
 import zipfile
 import pandas as pd
+import glob
 from dataloader.base_recording import BaseRecording
 
 from dataloader.direction import Direction
 from dataloader.syscall import Syscall
 from dataloader.resource_statistic import ResourceStatistic
 from dataloader.syscall_2021 import Syscall2021
+from dataloader.dataset_create_gp import DATAOUT_DIR
 
 
 class DF_Recording2021(BaseRecording):
@@ -54,12 +56,19 @@ class DF_Recording2021(BaseRecording):
 
         """
         try:
-            with zipfile.ZipFile(self.path, 'r') as zipped:
-                with zipped.open(self.name + '.sc') as unzipped:
-                    df = pd.read_csv(unzipped, delim_whitespace = True, index_col=False, names = ['time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'ARGS'])
-                    df.time = pd.to_datetime(df['time'])
-                    for period_time, period_cont in df.resample('900L', on='time'):
-                        yield period_cont
+            file_path = os.path.join(DATAOUT_DIR, self.path.split('\\')[-2], self.name)
+            files = glob.glob(file_path + '/DataFrame/*.pkl')
+            if len(files) == 0:
+                print(f'files is none, {file_path}')
+            for file in files:
+                df = pd.read_pickle(file)
+                yield df
+            # with zipfile.ZipFile(self.path, 'r') as zipped:
+            #     with zipped.open(self.name + '.sc') as unzipped:
+            #         df = pd.read_csv(unzipped, delim_whitespace = True, index_col=False, names = ['time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'ARGS'])
+            #         df.time = pd.to_datetime(df['time'])
+            #         for period_time, period_cont in df.resample('900L', on='time'):
+            #             yield period_cont
                     # for line_id, syscall in enumerate(unzipped, start=1):
                     #     syscall_object = Syscall2021(self.path, syscall.decode('utf-8').rstrip(), line_id=line_id)
                     #     if self._direction != Direction.BOTH:

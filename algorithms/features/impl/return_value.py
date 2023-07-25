@@ -18,19 +18,20 @@ class ReturnValue(BuildingBlock):
         super().__init__()
         self._max = {}
         self._min_max_scaling = min_max_scaling
+        self._need_train = True
         if os.path.exists(RVMODEPATH):
-            self._syscall_dict = torch.load(RVMODEPATH)
-            self._min_max_scaling = False
+            self._max = torch.load(RVMODEPATH)
+            self._need_train = False
             print('Load ReturnValue Model From %s' % RVMODEPATH)
 
     def is_needtrain(self):
-        return self._min_max_scaling
+        return self._need_train
 
     def train_on(self, syscall: Syscall):
         """
         save max value of each syscall
         """
-        if self._min_max_scaling:
+        if self._need_train:
             return_value_string = syscall.param('res')
             if return_value_string is not None:
                 try:
@@ -44,7 +45,7 @@ class ReturnValue(BuildingBlock):
                     pass
 
     def fit(self):
-        if self._min_max_scaling:
+        if self._need_train:
             torch.save(self._max, RVMODEPATH)
             print("Save Return Value Model To %s" % RVMODEPATH)
 

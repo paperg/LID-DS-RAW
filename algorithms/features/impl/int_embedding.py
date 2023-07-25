@@ -65,7 +65,7 @@ class IntEmbedding(BuildingBlock):
         """
         bb_value = self._dependency_list[0].get_result(syscall)
         try:
-            sys_to_int = self._syscall_dict[bb_value]
+            sys_to_int = self._syscall_dict[bb_value] / len(self._syscall_dict)
         except KeyError:
             sys_to_int = 0
         return sys_to_int

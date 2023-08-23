@@ -78,13 +78,13 @@ if __name__ == '__main__':
         seq_period = Sequence_period()
         ssc = SeenSysC(seq_period)
         usi = Usi(seq_period, ssc)
-        ss = Scg_Seq(seq_period)
-        # tn = TidNumber(seq_period)
-        sf = Syscall_Frequency(ss)
-        features = [usi, sf]
-        concat = Concat(features)
+        # ss = Scg_Seq(seq_period)
+        # # tn = TidNumber(seq_period)
+        # sf = Syscall_Frequency(ss)
+        # features = [usi, sf]
+        # concat = Concat(features)
 
-        ed = GP_Encoder_Decoder(concat, len(features))
+        ed = GP_Encoder_Decoder(seq_period, 43)
 
         # features
         # 'time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'ARGS'
@@ -115,7 +115,7 @@ if __name__ == '__main__':
 
         ids.determine_threshold()
         # detection
-        performance = ids.detect()
+        performance = ids.detect_batchs()
         #
         results = performance.get_results()
         #

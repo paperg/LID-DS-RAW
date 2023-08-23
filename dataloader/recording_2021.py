@@ -3,6 +3,9 @@ import csv
 import json
 import pcapkit
 import zipfile
+import pandas as pd
+import numpy as np
+import pickle
 from dataloader.base_recording import BaseRecording
 
 from dataloader.direction import Direction
@@ -10,6 +13,7 @@ from dataloader.syscall import Syscall
 from dataloader.resource_statistic import ResourceStatistic
 from dataloader.syscall_2021 import Syscall2021
 
+DATAOUT_DIR='L:/hids/dataSet/GP_DATA_DIR'
 
 class Recording2021(BaseRecording):
     """
@@ -42,6 +46,7 @@ class Recording2021(BaseRecording):
         self._direction = direction
         self.check_recording()
 
+
     def syscalls(self) -> str:
         """
 
@@ -65,6 +70,62 @@ class Recording2021(BaseRecording):
 
         except Exception:
             raise Exception(f'Error while working with file: {self.name} at {self.path}')
+
+
+    def syscalls_df(self) -> str:
+        """
+
+            Prepare stream of syscalls,
+            yield single lines
+
+            Returns:
+            str: syscall text line
+
+        """
+        try:
+            with zipfile.ZipFile(self.path, 'r') as zipped:
+                with zipped.open(self.name + '.sc') as unzipped:
+                    df = pd.read_csv(unzipped, delim_whitespace = True, index_col=False, names = ['time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'RET', 'ARGS'])
+                    # df.time = pd.to_datetime(df['time'])
+                    # for period_time, period_cont in df.resample('900L', on='time'):
+                    yield df
+
+        except Exception:
+            raise Exception(f'Error while working with file: {self.name} at {self.path}')
+
+    def df_and_np(self) -> tuple:
+        try:
+            path_list = self.path.split('\\')
+            if 'test' in self.path:
+                file_path = os.path.join(DATAOUT_DIR, path_list[-4], path_list[-3], path_list[-2], self.name)
+            else:
+                file_path = os.path.join(DATAOUT_DIR, path_list[-3], path_list[-2], self.name)
+            array_file = os.path.join(file_path, 'array.npy')
+            df_file = os.path.join(file_path, 'df_all.pkl')
+            arr_all = None
+            df_all = None
+            if os.path.exists(array_file):
+                arr_all = np.load(array_file, allow_pickle=True)
+            else:
+                print(f'{array_file} is not exists')
+
+            if os.path.exists(df_file):
+                with open(df_file, 'rb') as f:
+                    df_all = pickle.load(f)
+            else:
+                print(f'{df_file} is not exists')
+
+            yield tuple([arr_all, df_all])
+            # files = glob.glob(file_path + '/FinalData/*.npy')
+            # if len(files) == 0:
+            #     print(f'files is none, {file_path}')
+            # for file in files:
+            #     datas = np.load(file)
+            #     df_file = file.replace('FinalData', 'DataFrame').replace('npy', 'pkl')
+            #     df = pd.read_pickle(df_file)
+            #     yield tuple([datas,df])
+        except Exception as ex:
+            raise Exception(f'Error while get data working with file: {self.name} at {self.path}, {ex}')
 
     def packets(self):
         """

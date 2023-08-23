@@ -2,11 +2,9 @@ from collections import deque
 
 from algorithms.building_block import BuildingBlock
 from dataloader.syscall import Syscall
-from algorithms.features.impl.ngram import Ngram
-import networkx as nx
 
 
-class SystemCallGraph(BuildingBlock):
+class UnseenSystemCall(BuildingBlock):
 
     def __init__(self, input: BuildingBlock):
         super().__init__()
@@ -15,7 +13,7 @@ class SystemCallGraph(BuildingBlock):
         # internal data
         self._graphs = {}
         self._last_added_nodes = {}
-        self._result_dict = {'mysqld':{}, 'apache2':{}}
+        self._result_dict = {}
 
         # dependency list
         self._dependency_list = []
@@ -24,32 +22,9 @@ class SystemCallGraph(BuildingBlock):
     def depends_on(self):
         return self._dependency_list
 
-    def remove_empty_node(self, process_name, node):
-        if self._graphs[process_name].has_node(node):
-            if self._graphs[process_name].degree(node) == 0:
-                self._graphs[process_name].remove_node(node)
-                # print(f'remove Node {node}')
-    def remove_one_edge(self, process_name, src_node, target_node):
-        # if has a edge form src_node to target_node, remove it
-        if self._graphs[process_name].has_edge(src_node, target_node):
-            count = self._graphs[process_name].edges[src_node, target_node]["f"]
-            count -= 1
-            if count != 0:
-                self._graphs[process_name].add_edge(src_node, target_node, f=count)
-            else:
-                self._graphs[process_name].remove_edge(src_node, target_node)
-                if self._graphs[process_name].degree(src_node) == 0:
-                    self._graphs[process_name].remove_node(src_node)
-                    # print(f'remove Node {src_node}')
-        else:
-            print("no edge from src_node to target_node")
-    def train_on(self, syscall: Syscall):
-        """
-        adds the current input to the grpah
-        """
+    def train_on(self, seq_df):
 
-        new_node = self._input.get_result(syscall)
-        if new_node is not None:
+        if seq_df is not None:
             new_node = new_node[:2]
             # check for threads
             # do not use thread id for now

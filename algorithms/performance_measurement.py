@@ -122,6 +122,71 @@ class Performance:
                 self._cfp_end_normal()
                 self._tn += 1
 
+    def analyze_batchs(self, syscall_time, is_anomaly: bool):
+        """
+        counts performance values with syscall and anomaly score as input,
+        differentiates between normal and exploit files
+        """
+        need_display = False
+        # files with exploit
+        if self._current_exploit_time is not None:
+            # 异常文件中， _exploit_anomaly_score_count 序列的计数
+            self._exploit_anomaly_score_count += 1
+            if is_anomaly:
+                # 预测是异常，异常为阳，非异常为阴
+                if self._current_exploit_time > syscall_time:
+                    # 实际没有异常， 假阳
+                    need_display = True
+                    self._fp += 1
+                    # _current_cfp_stream_exploits 计数无用
+                    self._current_cfp_stream_exploits += 1
+                    # 假阳开始， 记录序列 _exploit_anomaly_score_count 索引
+                    self._cfp_start_exploits()
+
+                elif self._current_exploit_time <= syscall_time:
+                    # 实际是异常， 真阳
+                    # 假阳结束，一次假阳计数加一，多次假阳算一个
+                    self._cfp_end_exploits()
+
+                    if self._alarm is False:
+                        self._tp += 1
+                        self._alarm_count += 1
+                        self._alarm = True
+                    elif self._alarm is True:
+                        self._tp += 1
+
+            else:
+                # 预测是非异常
+                if self.create_alarms:
+                    self.alarms.end_alarm()
+                # 假阳结束，一次假阳计数加一，多次假阳算一个
+                self._cfp_end_exploits()
+                if self._current_exploit_time > syscall_time:
+                    # 实际是非异常，真阴
+                    self._tn += 1
+                elif self._current_exploit_time <= syscall_time:
+                    # 实际是异常，假阴
+                    self._fn += 1
+                    # need_display = True
+
+        # files without exploit
+        elif self._current_exploit_time is None:
+            # 实际非异常
+            # 正常文件中，序列的计数
+            self._normal_score_count += 1
+            if is_anomaly:
+                # 假阳
+                need_display = True
+                self._fp += 1
+                # 无用计数
+                self._current_cfp_stream_normal += 1
+                self._cfp_start_normal()
+            else:
+                # 真阴
+                self._cfp_end_normal()
+                self._tn += 1
+
+        return need_display, self._current_exploit_time
     def add(left: Performance, right: Performance) -> Performance:
         final_performance = Performance()
         final_performance.set_threshold(left._threshold)

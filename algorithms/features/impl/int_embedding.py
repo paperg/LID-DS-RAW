@@ -4,6 +4,7 @@ from algorithms.building_block import BuildingBlock
 from algorithms.features.impl.syscall_name import SyscallName
 import torch
 import os
+import json
 
 DEFAULT_DIR= 'K:/hids/Models'
 # 系统调用 name 转为 int
@@ -19,14 +20,14 @@ class IntEmbedding(BuildingBlock):
         super().__init__()
         self._syscall_dict = {}
         self.need_train = True
-        dir = os.path.join(DEFAULT_DIR,  scenario_name)
-        self.save_path = os.path.join(dir, 'IntEmbedding_model')
+        self._save_dir = os.path.join(DEFAULT_DIR,  scenario_name)
+        self.save_path = os.path.join(self._save_dir, 'IntEmbedding_model')
         if building_block is None:
             building_block = SyscallName()
         self._dependency_list = [building_block]
 
-        if os.path.exists(dir) is not True:
-            os.mkdir(dir)
+        if os.path.exists(self._save_dir) is not True:
+            os.mkdir(self._save_dir)
 
         if os.path.exists(self.save_path):
             self._syscall_dict = torch.load(self.save_path)
@@ -56,6 +57,8 @@ class IntEmbedding(BuildingBlock):
     def fit(self):
         if self.need_train:
             torch.save(self._syscall_dict, self.save_path)
+            with open(os.path.join(self._save_dir, 'intEmbedding.json'), 'w') as f:
+                json.dump(self._syscall_dict, f, indent=4, ensure_ascii=True, sort_keys=False)
             print("Save IntEmbedding Model To %s" % self.save_path)
 
     # 获取系统调用 name, 根据字典 _syscall_dict get index, or retuen 0
@@ -65,11 +68,21 @@ class IntEmbedding(BuildingBlock):
         """
         bb_value = self._dependency_list[0].get_result(syscall)
         try:
-            sys_to_int = self._syscall_dict[bb_value] / len(self._syscall_dict)
+            sys_to_int = self._syscall_dict[bb_value]
         except KeyError:
-            sys_to_int = 0
+            sys_to_int = len(self._syscall_dict) + 1
+            print('KeeyError %s %d' % (bb_value, sys_to_int))
         return sys_to_int
 
+    def _calculate(self, bb_value: str):
+        """
+            transforms given building_block to integer
+        """
+        try:
+            sys_to_int = self._syscall_dict[bb_value]
+        except KeyError:
+            sys_to_int = len(self._syscall_dict) + 1
+        return sys_to_int
 
 class IntEmbeddingConcat(BuildingBlock):
     """

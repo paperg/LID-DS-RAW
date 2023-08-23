@@ -1,6 +1,10 @@
 """
     IDS class definition
 """
+import pandas as pd
+import numpy as np
+import os
+
 from copy import deepcopy
 from functools import reduce
 from typing import Type
@@ -10,7 +14,7 @@ from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from algorithms.building_block import BuildingBlock
-from algorithms.data_preprocessor import DataPreprocessor
+from algorithms.data_preprocessor import DataPreprocessor, GP_DataPreprocessor
 from algorithms.performance_measurement import Performance
 from algorithms.score_plot import ScorePlot
 from algorithms.util.dependency_graph_encoding import dependency_graph_to_config_tree
@@ -33,7 +37,7 @@ class IDS:
         self._final_bb = resulting_building_block
         if not self._final_bb.is_decider():
             raise ValueError('Resulting BuildingBlock is not a decider!')
-        self._data_preprocessor = DataPreprocessor(self._data_loader, resulting_building_block)
+        self._data_preprocessor = GP_DataPreprocessor(self._data_loader, resulting_building_block)
         self.threshold = 0.0
         self._alarm = False
         self._anomaly_scores_exploits = []
@@ -127,8 +131,6 @@ class IDS:
 
             for syscall in recording.syscalls():
                 is_anomaly = self._final_bb.get_result(syscall)
-                if is_anomaly:
-                    print('is_anomaly')
                 self.performance.analyze_syscall(syscall, is_anomaly)
                 if self.plot is not None:
                     self.plot.add_to_plot_data(anomaly_score,
@@ -140,6 +142,76 @@ class IDS:
             # run end alarm once to ensure that last alarm gets saved
             if self.performance.alarms is not None:
                 self.performance.alarms.end_alarm()
+        return self.performance
+
+    def detect_batchs(self, model) -> Performance:
+        """
+        detecting performance values using the test data,
+        calling performance object for measurement and
+        plot object if plot_switch is True
+        """
+        data = self._data_loader.test_data()
+        description = 'anomaly detection'.rjust(27)
+        analyze_dir = 'K:\\hids\\dataAnalyze'
+        for recording in tqdm(data, description, unit=" recording"):
+            self.performance.new_recording(recording)
+            if self.plot is not None:
+                self.plot.new_recording(recording)
+
+            columns = ['file_exploit_time', 'current_time']
+            if model._use_timedelta:
+                columns.extend(['Time_result'])
+
+            if model._use_ptidfreq:
+                columns.extend(['PID_SW_Freq', 'PID_Number', 'TID_SW_Freq', 'TID_Number'])
+
+            if model._use_usa:
+                columns.extend(['UnseenARGS'])
+
+            if model._use_usc:
+                columns.extend(['UnseenSC'])
+
+            if model._use_freq:
+                columns.extend(['Freq'])
+
+            df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim)])
+            nor_df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim)])
+
+            for data_tuple in recording.df_and_np():
+                if model.get_input_result(data_tuple):
+                    is_anomaly, timestaps, result_data, result_bools = self._final_bb.get_batch_result()
+                    for index, cur_time in enumerate(timestaps):
+                        need_hanle, current_exploit_time = self.performance.analyze_batchs(cur_time, is_anomaly[index])
+                        if need_hanle:
+                            new_row = np.array([current_exploit_time, cur_time])
+                            new_row = np.append(new_row, result_bools[index])
+                            new_row = np.append(new_row, result_data[index])
+                            df.loc[len(df.index)] = new_row
+                            # print(result_data[i])
+                        elif current_exploit_time is not None:
+                            new_row = np.array([current_exploit_time, cur_time])
+                            new_row = np.append(new_row, result_bools[index])
+                            new_row = np.append(new_row, result_data[index])
+                            nor_df.loc[len(nor_df.index)] = new_row
+
+                    if self.plot is not None:
+                        self.plot.add_to_plot_data(anomaly_score,
+                                                   syscall,
+                                                   self.performance.get_cfp_indices())
+            if current_exploit_time is not None:
+                if self.performance._alarm is False:
+                    print(f'File {recording.name} Not recorgnize')
+
+            self._data_preprocessor.new_recording()
+            if len(df) > 0:
+                df.to_pickle(os.path.join(analyze_dir, recording.name + '_exploit.pkl'))
+            if len(nor_df) > 0:
+                nor_df.to_pickle(os.path.join(analyze_dir, recording.name + '_normal.pkl') )
+
+            # run end alarm once to ensure that last alarm gets saved
+            if self.performance.alarms is not None:
+                self.performance.alarms.end_alarm()
+
         return self.performance
 
     def detect_on_single_recording(self, recording: Type[BaseRecording]) -> Performance:

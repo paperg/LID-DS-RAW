@@ -39,6 +39,7 @@ class TimeDelta(BuildingBlock):
         if self._thread_aware:
             thread_id = syscall.thread_id()
         delta = self._calc_delta(current_time, thread_id)
+
         if delta > self._max_time_delta:
             self._max_time_delta = delta
 
@@ -60,9 +61,12 @@ class TimeDelta(BuildingBlock):
         if self._thread_aware:
             thread_id = syscall.thread_id()
         delta = self._calc_delta(current_time, thread_id)
+
+        if delta > 5000000:
+            delta = 5000000
         # noremalize the delta
-        normalized_delta = delta / self._max_time_delta
-        return normalized_delta
+        # normalized_delta = delta / self._max_time_delta
+        return 1 - (delta / 5000000)
 
     def _calc_delta(self, current_time: int, thread_id: int):
         if thread_id in self._last_time:

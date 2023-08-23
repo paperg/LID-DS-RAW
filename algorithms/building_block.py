@@ -19,6 +19,9 @@ class BuildingBlock:
     def is_needtrain(self):
         return True
 
+    def get_dataset_directly(self):
+        return False
+
     def train_on(self, syscall: Syscall):
         """
         takes one system call to train this bb

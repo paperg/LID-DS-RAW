@@ -219,9 +219,9 @@ class DataLoader2021(BaseDataLoader):
             'validation': {},
             'test': {}
         }
-        training_files = glob.glob(self.scenario_path + f'/{TRAINING}/*.zip')
-        val_files = glob.glob(self.scenario_path + f'/{VALIDATION}/*.zip')
-        test_files = glob.glob(self.scenario_path + f'/{TEST}/*/*.zip')
+        training_files = glob.glob(self.scenario_path + f'\\{TRAINING}\\*.zip')
+        val_files = glob.glob(self.scenario_path + f'\\{VALIDATION}\\*.zip')
+        test_files = glob.glob(self.scenario_path + f'\\{TEST}\\*\\*.zip')
         # create list of all files
         all_files = training_files + val_files + test_files
         for file in all_files:

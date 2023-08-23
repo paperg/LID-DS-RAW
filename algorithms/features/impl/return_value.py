@@ -19,6 +19,8 @@ class ReturnValue(BuildingBlock):
         self._max = {}
         self._min_max_scaling = min_max_scaling
         self._need_train = True
+        self._fileter_sc = ['write', 'mmap', 'brk', 'writev', 'read', 'sendto', 'recvfrom', 'lseek', 'pwrite', 'pread',
+                            'clone']
         if os.path.exists(RVMODEPATH):
             self._max = torch.load(RVMODEPATH)
             self._need_train = False
@@ -36,6 +38,10 @@ class ReturnValue(BuildingBlock):
             if return_value_string is not None:
                 try:
                     current_bytes = int(return_value_string)
+                    if syscall.name() in self._fileter_sc:
+                        if current_bytes > 0:
+                            current_bytes = 1
+
                     if syscall.name() in self._max:
                         if current_bytes >= self._max[syscall.name()]:
                             self._max[syscall.name()] = current_bytes

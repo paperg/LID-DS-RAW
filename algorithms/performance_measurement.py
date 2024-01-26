@@ -100,6 +100,7 @@ class Performance:
                     self._tn += 1
                 elif self._current_exploit_time <= syscall_time:
                     # 实际是异常，假阴
+                    need_display = True
                     self._fn += 1
 
         # files without exploit
@@ -166,8 +167,8 @@ class Performance:
                     self._tn += 1
                 elif self._current_exploit_time <= syscall_time:
                     # 实际是异常，假阴
-                    self._fn += 1
                     # need_display = True
+                    self._fn += 1
 
         # files without exploit
         elif self._current_exploit_time is None:

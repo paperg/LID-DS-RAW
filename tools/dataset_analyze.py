@@ -31,6 +31,81 @@ TEST = 'test'
 plt.rcParams['font.sans-serif']=['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
+
+class setfig():
+    '''
+       在绘图前对字体类型、字体大小、分辨率、线宽、输出格式进行设置.
+       para colume = 1.半栏图片 7*6cm
+                     2.双栏长图 14*6cm
+       x轴刻度默认为整数
+       手动保存时，默认输出格式为 pdf
+       案例 Sample.1:
+            fig=setfig(column=2)
+            plt.semilogy(x, color='blue', linestyle='solid', label='信号1')
+            plt.legend(loc='upper left')
+            plt.xlabel('时间/t')
+            plt.ylabel('幅度')
+            plt.title('冲击声信号')
+            fig.show()
+    '''
+
+    def __init__(self, column):
+
+        self.column = column  # 设置栏数
+        # 对尺寸和 dpi参数进行调整
+        plt.rcParams['figure.dpi'] = 300
+
+        # 字体调整
+        plt.rcParams['font.sans-serif'] = ['simhei']  # 如果要显示中文字体,则在此处设为：simhei,Arial Unicode MS
+        plt.rcParams['font.weight'] = 'light'
+        plt.rcParams['axes.unicode_minus'] = False  # 坐标轴负号显示
+        plt.rcParams['axes.titlesize'] = 8  # 标题字体大小
+        plt.rcParams['axes.labelsize'] = 7  # 坐标轴标签字体大小
+        plt.rcParams['xtick.labelsize'] = 7  # x轴刻度字体大小
+        plt.rcParams['ytick.labelsize'] = 7  # y轴刻度字体大小
+        plt.rcParams['legend.fontsize'] = 6
+
+        # 线条调整
+        plt.rcParams['axes.linewidth'] = 1
+
+        # 刻度在内，设置刻度字体大小
+        plt.rcParams['xtick.direction'] = 'in'
+        plt.rcParams['ytick.direction'] = 'in'
+
+        # 设置输出格式为PDF
+        plt.rcParams['savefig.format'] = 'pdf'
+        plt.rcParams['figure.autolayout'] = True
+
+    @property
+    def tickfont(self):
+        plt.tight_layout()
+        ax1 = plt.gca()  # 获取当前图像的坐标轴
+        # 更改坐标轴字体，避免出现指数为负的情况
+        tick_font = font_manager.FontProperties(family='it', size=7.0)
+        ax1.xaxis.set_major_locator
+        for labelx in ax1.get_xticklabels():
+            labelx.set_fontproperties(tick_font)
+        for labely in ax1.get_yticklabels():
+            labely.set_fontproperties(tick_font)
+        ax1.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))  # x轴刻度设置为整数
+
+    @property
+    def Global_font(self):
+        # 设置基本字体
+        plt.rcParams['font.sans-serif'] = ['simhei']  # 如果要显示中文字体,则在此处设为：simhei,Arial Unicode MS
+        plt.rcParams['font.weight'] = 'light'
+
+    def show(self):
+        # 改变字体
+        self.Global_font
+        self.tickfont
+        # 改变图像大小
+        cm_to_inc = 1 / 2.54  # 厘米和英寸的转换 1inc = 2.54cm
+        gcf = plt.gcf()  # 获取当前图像
+        if self.column == 1:
+            gcf.set_size_inches(7 * cm_to_inc, 6 * cm_to_inc)
+        else:
+            gcf.set_size_inches(14 * cm_to_inc, 6 * cm_to_inc)
 def display_file(train_file_dict, val_file_dict, test_file_dict, scenario_name):
     output_table = Table(title='File Statistics')
     output_table.add_column("DIR", style="magenta")
@@ -77,15 +152,33 @@ def get_file_num(dataloader, scenario_name):
         test_file_dict[t] = test_file_dict[t] + 1
 
     display_file(train_file_dict, val_file_dict, test_file_dict, scenario_name)
-
-
-def handle_unsc_group_by_time(group_df):
+def handle_unsc_group_by_time_in_out_degree(group_df):
     uss = len(set(group_df['Node S']))
     ust = len(set(group_df['Node T']))
 
+    return (uss + ust) * (group_df[['Train S in', 'Train T in', 'Train S out', 'Train T out']].sum().sum())
+    # return (uss * group_df[['Train S in', 'Train S out']].sum().sum()) + (ust * group_df[['Train T in', 'Train T out']].sum().sum())
+
+def handle_unsc_group_by_time_other(group_df):
+    usi = group_df['usi degree']
     # return (uss + ust) * (group_df[['Train S in', 'Train T in', 'Train S out', 'Train T out']].sum().sum())
     # return (uss * group_df[['Train S in', 'Train S out']].sum().sum()) + (ust * group_df[['Train T in', 'Train T out']].sum().sum())
-    return (uss + ust)
+    return usi
+
+def handle_unsc_group_by_time(group_df):
+    # uss = len(set(group_df['Node S']))
+    # ust = len(set(group_df['Node T']))
+    usi = group_df['usi']
+    # return (uss + ust) * (group_df[['Train S in', 'Train T in', 'Train S out', 'Train T out']].sum().sum())
+    # return (uss * group_df[['Train S in', 'Train S out']].sum().sum()) + (ust * group_df[['Train T in', 'Train T out']].sum().sum())
+    return usi
+
+def get_uai_per_row(group_df):
+    uai = group_df['uai'].max()
+    # / len(set(group_df['Procee Name']))
+    num_uai_max = group_df['sc unseen args num'].product()
+    return uai
+
 def analyze_dir_df(df, recoding_path, type_name):
 
     unseenType_path = os.path.join(recoding_path, type_name)
@@ -108,7 +201,7 @@ def analyze_onefile_by_dir_df(df, recoding_path, type_name, file_name):
         return df
     # Now, just USC.json or USA.json one file
     df = df.append(pd.read_json(json_path))
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
     return df
 
 def analysis_unseen_args(dataloader, scenario_name):
@@ -137,12 +230,16 @@ def analysis_unseen_args(dataloader, scenario_name):
     if len(unseenargs_df) > 0:
         # unseenargs_df['Current Time'] = pd.to_datetime(unseenargs_df['Current Time'])
         unseenargs_df.to_csv(os.path.join(DATAOUT_DIR, scenario_name, 'unseenArgs.csv'))
-        nor_result = unseenargs_df[unseenargs_df.is_exploit == False]['uai'].value_counts()
-        exp_result = unseenargs_df[unseenargs_df.is_exploit == True]['uai'].value_counts()
+
+        # nor_result = unseenargs_df[unseenargs_df.is_exploit == False]['uai'].value_counts()
+        # exp_result = unseenargs_df[unseenargs_df.is_exploit == True]['uai'].value_counts()
+        nor_result = unseenargs_df[unseenargs_df.is_exploit == False].groupby('Current Time').apply(get_uai_per_row)
+        exp_result = unseenargs_df[unseenargs_df.is_exploit == True].groupby('Current Time').apply(get_uai_per_row)
+
         plt.figure(figsize=(18, 15))
         plt.title("UnSeen ARGS Score", fontsize=14)
-        plt.plot(nor_result.index.tolist(), nor_result.values.tolist(), c='b', alpha=0.5, marker='o', markersize=4, ls='')
-        plt.plot(exp_result.index.tolist(), exp_result.values.tolist(), c='r', alpha=0.5, marker='v', markersize=6, ls='')
+        plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=6, ls='')
+        plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=9, ls='')
 
         plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenArgs.png'))
 
@@ -167,9 +264,8 @@ def analysis_syscall_size(dataloader, scenario_name):
                 # for test , test dir has two subdir
                 recoding_path = os.path.join(DATAOUT_DIR, scenario_name, pathlist[-3], pathlist[-2], recording.name)
 
-            if data_type['type'] != TRAINING:
-                sc_size_df = analyze_onefile_by_dir_df(sc_size_df, recoding_path, 'SSIZE', 'SC_SIZE.json')
-
+            # if data_type['type'] != TRAINING:
+            sc_size_df = analyze_onefile_by_dir_df(sc_size_df, recoding_path, 'SSIZE', 'SC_SIZE.json')
     # save seensc_df to csv
     # sc_size_df['Current Name'] = pd.to_datetime(unseenargs_df['Current Name'])
     sc_size_df.to_csv(os.path.join(DATAOUT_DIR, scenario_name, 'sysCallSize.csv'))
@@ -188,9 +284,10 @@ def analysis_ret_max(dataloader, scenario_name):
 
     plt.figure(figsize=(18, 15))
     plt.title("Ret Less Zero Number", fontsize=14)
-    x_labels = ['number']
 
     for data_type in data_type_list:
+        freq_nor_list = []
+        freq_exp_list = []
         for recording in tqdm(data_type['data'],
                               f"RetNumber Load DataSet Array {data_type['type']}".rjust(27)):
 
@@ -206,18 +303,36 @@ def analysis_ret_max(dataloader, scenario_name):
                     continue
 
                 for data in data_array:
+                    ret = data[47]
                     index = data[0]
-                    y = data[47] / len(df[index])
+                    # freq = len(df[index])
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
-                        # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=4, ls='')
+                    #     # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
+                    #     plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6, ls='')
+                        freq_nor_list.append(ret)
                     else:
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=6, ls='')
-                        # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
+                        freq_exp_list.append(ret)
+                    #     plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
+                    #     # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
 
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'Ret_Less_Zero_Number.png'))
+    # plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'Ret_Less_Zero_Number.png'))
+    # plt.clf()
     # plt.show()
     print('analysis_ret_max() Success')
+
+    # freq_nor_list = np.array(freq_nor_list)
+    # freq_exp_list = np.array(freq_exp_list)
+    y_list = np.bincount(freq_nor_list)
+    x_labels = [x for x in range(len(y_list))]
+    plt.figure(figsize=(18, 15))
+    plt.title("Return Status", fontsize=14)
+    plt.plot(x_labels , y_list, c='b', alpha=0.5, marker='^', markersize=6, ls='')
+    y_list = np.bincount(freq_exp_list)
+    x_labels = [x for x in range(len(y_list))]
+    plt.plot(x_labels , y_list, c='r', alpha=0.2, marker='o', markersize=8, ls='')
+
+    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'Return.png'))
+    print('Return Status Success')
 
 def analysis_sc_max_freq(dataloader, scenario_name):
     data_type_list = [
@@ -229,7 +344,7 @@ def analysis_sc_max_freq(dataloader, scenario_name):
     plt.figure(figsize=(18, 15))
     plt.title("SC Max Call Freq", fontsize=14)
     x_labels = [i for i in range(8)]
-
+    dataSet_Static = {TRAINING:0, VALIDATION:0, TEST:0}
     for data_type in data_type_list:
         for recording in tqdm(data_type['data'],
                               f"ScMaxFreq Load DataSet Array {data_type['type']}".rjust(27)):
@@ -245,22 +360,41 @@ def analysis_sc_max_freq(dataloader, scenario_name):
                 if data_array is None:
                     continue
 
+                dataSet_Static[data_type['type']] += len(data_array)
+
                 for data in data_array:
                     index = data[0]
                     y = data[48:56]
                     if len(y) != 8:
+                        print('!!!!!!!!!!!!! len(y) %d != 8' % len(y))
                         continue
+
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                         # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=4, ls='')
+                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6, ls='')
                     else:
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=6, ls='')
+                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
                         # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
 
     plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'SC_Max_Call_Freq.png'))
     # plt.show()
     print('analysis_sc_max_freq() Success')
 
+    output_table = Table(title='DataSet Statistics')
+    output_table.add_column("", style="magenta")
+    output_table.add_column("Training", style="magenta")
+    output_table.add_column("Val", style="magenta")
+    output_table.add_column("Test Normal", style="magenta")
+    output_table.add_column("Test Exploit", style="magenta")
+    output_table.add_row('Total', str(dataSet_Static[TRAINING]), str(dataSet_Static[VALIDATION]), str(dataSet_Static[TEST]), str(dataSet_Static[TEST]))
+
+    console = Console(record=True)
+    console.print(output_table, justify="center")
+    console.save_svg(os.path.join(DATAOUT_DIR, scenario_name + '_DataSet_Statistics.svg'), title=scenario_name)
+
+    print('Dataset Statistics Success')
+
+# get unseen SC and Dataset Statistics
 def analysis_unseen_sc(dataloader, scenario_name):
     data_type_list = [
         {'type': TRAINING, 'data': dataloader.training_data()},
@@ -284,20 +418,25 @@ def analysis_unseen_sc(dataloader, scenario_name):
             if data_type['type'] != TRAINING:
                 unseensc_df = analyze_onefile_by_dir_df(unseensc_df, recoding_path, 'SSC', 'USC.json')
                 unseensc_only_sc_df = analyze_onefile_by_dir_df(unseensc_only_sc_df, recoding_path, 'SSC', 'ONLY_SC_USC.json')
+
+
     # save seensc_df to csv
     # unseensc_df['Current Time'] = pd.to_datetime(unseensc_df['Current Time'])
     # unseensc_only_sc_df['Current Time'] = pd.to_datetime(unseensc_only_sc_df['Current Time'])
-
     try:
         unseensc_df.to_csv(os.path.join(DATAOUT_DIR, scenario_name, 'unseenSc.csv'))
         unseensc_only_sc_df.to_csv(os.path.join(DATAOUT_DIR, scenario_name, 'unseenSc_only_sc.csv'))
     except:
         print('Save file ERROR')
 
-    nor_result = unseensc_df[unseensc_df.is_exploit == 0].groupby('Current Time').apply(handle_unsc_group_by_time)
-    exp_result = unseensc_df[unseensc_df.is_exploit == 1].groupby('Current Time').apply(handle_unsc_group_by_time)
-    nor_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 0].groupby('Current Time').apply(handle_unsc_group_by_time)
-    exp_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 1].groupby('Current Time').apply(handle_unsc_group_by_time)
+    # nor_result = unseensc_df[unseensc_df.is_exploit == 0].groupby('Current Time').apply(handle_unsc_group_by_time)
+    # exp_result = unseensc_df[unseensc_df.is_exploit == 1].groupby('Current Time').apply(handle_unsc_group_by_time)
+    # nor_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 0].groupby('Current Time').apply(handle_unsc_group_by_time)
+    # exp_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 1].groupby('Current Time').apply(handle_unsc_group_by_time)
+    nor_result = unseensc_df[unseensc_df.is_exploit == 0].apply(handle_unsc_group_by_time_other, axis=1)
+    exp_result = unseensc_df[unseensc_df.is_exploit == 1].apply(handle_unsc_group_by_time_other, axis=1)
+    nor_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 0].apply(handle_unsc_group_by_time_other, axis=1)
+    exp_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 1].apply(handle_unsc_group_by_time_other, axis=1)
 
     us_sc_ret_nor_max = nor_result.max()
     us_sc_ret_exp_min = exp_result.min()
@@ -309,9 +448,41 @@ def analysis_unseen_sc(dataloader, scenario_name):
     output_table.add_column("NORMAL MAX", style="magenta")
     output_table.add_column("EXPLOIT MIN", style="magenta")
     output_table.add_column("RESULT", style="magenta")
+    output_table.add_column("Percentage", style="magenta")
 
-    output_table.add_row('Syscall & Ret', str(us_sc_ret_nor_max), str(us_sc_ret_exp_min), 'OK' if us_sc_ret_exp_min > us_sc_ret_nor_max else 'FAIL')
-    output_table.add_row('Syscall', str(us_sc_nor_max), str(us_sc_exp_min), 'OK' if us_sc_exp_min > us_sc_nor_max else 'FAIL')
+    output_table.add_row('Syscall & Ret', str(us_sc_ret_nor_max), str(us_sc_ret_exp_min), 'OK' if us_sc_ret_exp_min > us_sc_ret_nor_max else 'FAIL', str(len(exp_result[exp_result > us_sc_ret_nor_max]) / len(exp_result)))
+    output_table.add_row('Syscall', str(us_sc_nor_max), str(us_sc_exp_min), 'OK' if us_sc_exp_min > us_sc_nor_max else 'FAIL', str(len(exp_result_only_sc[exp_result_only_sc > us_sc_nor_max]) / len(exp_result_only_sc)))
+
+    console = Console(record=True)
+    console.print(output_table, justify="center")
+    console.save_svg(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenSyc_Statistics_other.svg'), title=scenario_name)
+
+
+    nor_result = unseensc_df[unseensc_df.is_exploit == 0].apply(handle_unsc_group_by_time, axis=1)
+    exp_result = unseensc_df[unseensc_df.is_exploit == 1].apply(handle_unsc_group_by_time, axis=1)
+    nor_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 0].apply(handle_unsc_group_by_time,
+                                                                                        axis=1)
+    exp_result_only_sc = unseensc_only_sc_df[unseensc_only_sc_df.is_exploit == 1].apply(handle_unsc_group_by_time,
+                                                                                        axis=1)
+
+    us_sc_ret_nor_max = nor_result.max()
+    us_sc_ret_exp_min = exp_result.min()
+    us_sc_nor_max = nor_result_only_sc.max()
+    us_sc_exp_min = exp_result_only_sc.min()
+
+    output_table = Table(title='UnSeen Syscall Statistics')
+    output_table.add_column("TYPE", style="magenta")
+    output_table.add_column("NORMAL MAX", style="magenta")
+    output_table.add_column("EXPLOIT MIN", style="magenta")
+    output_table.add_column("RESULT", style="magenta")
+    output_table.add_column("Percentage", style="magenta")
+
+    output_table.add_row('Syscall & Ret', str(us_sc_ret_nor_max), str(us_sc_ret_exp_min),
+                         'OK' if us_sc_ret_exp_min > us_sc_ret_nor_max else 'FAIL',
+                         str(len(exp_result[exp_result > us_sc_ret_nor_max]) / len(exp_result)))
+    output_table.add_row('Syscall', str(us_sc_nor_max), str(us_sc_exp_min),
+                         'OK' if us_sc_exp_min > us_sc_nor_max else 'FAIL',
+                         str(len(exp_result_only_sc[exp_result_only_sc > us_sc_nor_max]) / len(exp_result_only_sc)))
 
     console = Console(record=True)
     console.print(output_table, justify="center")
@@ -319,14 +490,14 @@ def analysis_unseen_sc(dataloader, scenario_name):
 
     plt.figure(figsize=(18, 15))
     plt.title("UnSeen Score", fontsize=14)
-    plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=4, ls='')
-    plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=6, ls='')
+    plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=6, ls='')
+    plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=9, ls='')
 
     plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenSc.png'))
     plt.clf()
     plt.title("UnSeen Only SC Score", fontsize=14)
-    plt.plot(nor_result_only_sc.value_counts().index.tolist(), nor_result_only_sc.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=4, ls='')
-    plt.plot(exp_result_only_sc.value_counts().index.tolist(), exp_result_only_sc.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=6, ls='')
+    plt.plot(nor_result_only_sc.value_counts().index.tolist(), nor_result_only_sc.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=6, ls='')
+    plt.plot(exp_result_only_sc.value_counts().index.tolist(), exp_result_only_sc.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=9, ls='')
 
     plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenSc_OnlySc.png'))
 
@@ -363,9 +534,9 @@ def analysis_pid_tid(dataloader, scenario_name):
                     y = data[41:45] / len(df[index])
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                         # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=4,ls='')
+                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6,ls='')
                     else:
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=6, ls='')
+                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
                         # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
     plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'PID_TID_Num_Freq.png'))
     # plt.show()
@@ -407,90 +578,17 @@ def analysis_time_delta(dataloader, scenario_name):
                     number_line = len(df[index])
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                         # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=4, ls='')
+                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6, ls='')
                         normal_max_scNum = normal_max_scNum if normal_max_scNum > number_line else number_line
                     else:
                         # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=6, ls='')
+                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
                         exploit_max_scNum = exploit_max_scNum if exploit_max_scNum > number_line else number_line
 
     plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'TimeDeltaScatter.png'))
     # plt.show()
     print('normal_max_scNum %d exploit_max_scNum %d ' % (normal_max_scNum, exploit_max_scNum))
     print('analysis_time_delta() Success')
-def get_dataframe(dataloader, scenario_name):
-    save_file_path = os.path.join('./out', scenario_name)
-    if  os.path.exists(save_file_path) is not True:
-        os.mkdir(save_file_path)
-        os.mkdir(os.path.join(save_file_path, 'DataFrame'))
-
-    test_normal_time_df = pd.Series()
-    test_exploit_time_df = pd.Series()
-
-    test_normal_df = pd.DataFrame()
-    test_exploit_df = pd.DataFrame()
-
-    file_record = {}
-    try:
-        for recording in tqdm(dataloader.test_data(),
-                                  f"Handle {scenario_name} Train".rjust(27),
-                                  unit=" recording_train"):
-            exploit_start_time = 0
-            recording_type = dataloader._metadata_list['test'][recording.name]['recording_type']
-            if recording_type == RecordingType.NORMAL_AND_ATTACK or recording_type == RecordingType.ATTACK:
-                exploit_start_time = recording.metadata()["time"]["exploit"][0]["absolute"] * (10 ** 9)
-                # print(f'Attack file , exploit_start_time  {exploit_start_time}\n')
-                if exploit_start_time == 0:
-                    print('!!!!!!!!!!!!! exploit_start_time! why it is 0')
-
-            for dataarray, sc_df in recording.syscalls():
-                if sc_df.index[0] != 0:
-                    print('!!!!!!!!!!!!! sc_df.index[0] != 0, Skip')
-                    print(sc_df.index[0])
-                    continue
-
-                if exploit_start_time != 0:
-                    file_record[recording.name + '.pkl'] = exploit_start_time
-                # 如果文件不存在
-                if os.path.exists(os.path.join(save_file_path, 'DataFrame', recording.name + '.pkl')) is not True:
-                    sc_df.to_pickle(os.path.join(save_file_path, 'DataFrame', recording.name + '.pkl'))
-
-                if exploit_start_time != 0:
-                    sc_df_nor = sc_df[sc_df['time'] < exploit_start_time]
-                    sc_df_exp = sc_df[sc_df['time'] >= exploit_start_time]
-
-                    # time = sc_df_nor['time']
-                    # time_next = time[1:].reset_index(drop=True)
-                    # df = time_next - time
-                    # test_normal_time_df = test_normal_time_df.append(df, ignore_index =True)
-                    test_normal_df = test_normal_df.append(sc_df_nor, ignore_index=True)
-
-                    # time = sc_df_exp['time'].reset_index(drop=True)
-                    # time_next = time[1:].reset_index(drop=True)
-                    # df = time_next - time
-                    # test_exploit_time_df = test_exploit_time_df.append(df, ignore_index =True)
-                    test_exploit_df = test_exploit_df.append(sc_df_exp, ignore_index=True)
-
-                else:
-                    # time = sc_df['time']
-                    # time_next = time[1:].reset_index(drop=True)
-                    # df = time_next - time
-                    # test_exploit_time_df = test_exploit_time_df.append(df, ignore_index =True)
-
-                    test_normal_df = test_normal_df.append(sc_df, ignore_index=True)
-
-        # test_normal_time_df.to_pickle(os.path.join(save_file_path,  'DF_test_normal_time.pkl'))
-        # test_exploit_time_df.to_pickle(os.path.join(save_file_path, 'DF_test_exploit_time.pkl'))
-
-        test_normal_df.to_pickle(os.path.join(save_file_path,  'DF_test_normal.pkl'))
-        test_exploit_df.to_pickle(os.path.join(save_file_path, 'DF_test_exploit.pkl'))
-
-        with open(os.path.join(save_file_path, scenario_name + '.json'), 'w') as f:
-            json.dump(file_record, f, indent=4, ensure_ascii=True, sort_keys=False)
-
-    except:
-        print(recording.name)
-        print(sc_df)
 
 if __name__ == '__main__':
 
@@ -502,40 +600,35 @@ if __name__ == '__main__':
             ]
     # scenarios ordered by training data size asc
     SCENARIOS = [
-        "Bruteforce_CWE-307",
-        "CVE-2017-7529",
-        "CWE-89-SQL-injection",
-        "CVE-2012-2122",
-
-        "CVE-2014-0160",
-
-
-
-
-        "CVE-2020-23839",
-        "PHP_CWE-434",
-        "ZipSlip",
-        "CVE-2018-3760",
-        "CVE-2020-9484",
-        "EPS_CWE-434",
-        "CVE-2019-5418",
         "Juice-Shop",
         "CVE-2020-13942",
-        "CVE-2017-12635_6"
+        "CWE-89-SQL-injection",
+        "CVE-2012-2122",
+        "CVE-2018-3760",
+        "CVE-2020-23839",
+        "CVE-2020-9484",
+        "EPS_CWE-434",
+        "CVE-2014-0160",
+        "CVE-2017-7529",
+        "Bruteforce_CWE-307",
+        "CVE-2019-5418",
+        "PHP_CWE-434",
     ]
-    SCENARIO_RANGE = SCENARIOS[0:1]
+    SCENARIO_RANGE = SCENARIOS[0:13]
+    fig = setfig(2)
+
     for scenario_name in SCENARIO_RANGE:
         scenario_path = os.path.join(work_dir,
                                      scenario_name)
         dataloader = dataloader_factory(scenario_path, direction=Direction.CLOSE)
         # 统计文件个数
         get_file_num(dataloader, scenario_name)
-        analysis_unseen_sc(dataloader, scenario_name)
-        analysis_unseen_args(dataloader, scenario_name)
-        analysis_syscall_size(dataloader, scenario_name)
-        analysis_ret_max(dataloader, scenario_name)
-        analysis_sc_max_freq(dataloader, scenario_name)
-        analysis_time_delta(dataloader, scenario_name)
-        analysis_pid_tid(dataloader, scenario_name)
+        # analysis_unseen_sc(dataloader, scenario_name)
+        # analysis_unseen_args(dataloader, scenario_name)
+        # analysis_syscall_size(dataloader, scenario_name)
+        # analysis_ret_max(dataloader, scenario_name)
+        # analysis_sc_max_freq(dataloader, scenario_name)
+        # analysis_time_delta(dataloader, scenario_name)
+        # analysis_pid_tid(dataloader, scenario_name)
 
         print('Success')

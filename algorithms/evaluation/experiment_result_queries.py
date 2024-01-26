@@ -22,10 +22,7 @@ class ResultQuery:
         # mongo_user = os.environ["LID_DS_MONGO_USER"]
         # mongo_pw = os.environ["LID_DS_MONGO_PW"]
 
-        client = MongoClient(
-            host='localhost',
-            port=27017
-        )
+        client = MongoClient()
 
         self._experiments: Collection = client[collection_name][collection_name]
 

@@ -23,7 +23,6 @@ from algorithms.features.impl.concat import Concat
 from algorithms.features.impl.usi import Usi
 from algorithms.features.impl.tid_number import TidNumber
 from algorithms.features.impl.sequence_period import Sequence_period
-from algorithms.features.impl.seen_syscall_list import SeenSysC
 from algorithms.features.impl.scg_sc_freq import Syscall_Frequency
 from algorithms.features.impl.gp_scg_period import Scg_Seq
 

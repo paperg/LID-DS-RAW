@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from torch.nn import TransformerEncoder
+from torch.nn import TransformerEncoder, LayerNorm
 from torch.nn import TransformerDecoder
 from torch.autograd import Variable
 
@@ -17,6 +17,7 @@ from algorithms.building_block import BuildingBlock
 from dataloader.syscall import Syscall
 
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
 # from sklearn.metrics import mean_squared_error
 
 DATA_USED_BY_MODEL_DIR = 'data_used_by_model'
@@ -29,12 +30,13 @@ index_uai = 45
 index_usi = 46
 index_ret_total = 47
 index_sc_max_start = 48
-index_sc_max_end = 56
+index_sc_max_end = 62
 
 normal_max_ptid_end = index_ptid_end - index_ptid_start
 normal_max_uai_end  = normal_max_ptid_end + 1
 normal_max_usi_end  = normal_max_uai_end + 1
 normal_max_freq_end = normal_max_usi_end + 1
+normal_sc_max_freq_end = normal_max_freq_end + 1
 def plot_accuracies(accuracy_list, folder):
     os.makedirs(f'plots/{folder}/', exist_ok=True)
     trainAcc = [i[0] for i in accuracy_list]
@@ -112,12 +114,13 @@ class TransformerDecoderLayer(nn.Module):
 
 
 class TranAD(nn.Module):
-    def __init__(self, feats, lr=0.001, dropout=0.2, hid_times=4, nhead = 1):
+    def __init__(self, feats, lr=0.001, dropout=0.2, hid_times=4, nhead = 1, use_ae2=True):
         super(TranAD, self).__init__()
         self.name = 'TranAD'
-
+        self._use_ae2 = use_ae2
         self._hid_times = hid_times
         self.lr = lr
+
         self.n_feats = feats
         self._dropout = dropout
 
@@ -134,45 +137,43 @@ class TranAD(nn.Module):
         # self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
 
         self.encoder1 = torch.nn.Sequential(
-            torch.nn.Linear(feats, feats * hid_times),
-            torch.nn.Dropout(p=self._dropout),
-            # torch.nn.SELU(),
-            # torch.nn.Sigmoid(),
-            torch.nn.Tanh(),
 
-            torch.nn.Linear(feats * hid_times, feats * hid_times * 2),
+            torch.nn.Linear(feats * 2, feats * hid_times * 2),
             torch.nn.Dropout(p=self._dropout),
             torch.nn.SELU(),
             # torch.nn.Sigmoid(),
+            # torch.nn.Tanh(),
 
-            # torch.nn.Linear(feats * hid_times * 2, feats * hid_times),
-            # torch.nn.Dropout(p=0.5),
+            torch.nn.Linear(feats * hid_times * 2, feats * hid_times * 4),
+            torch.nn.Dropout(p=self._dropout),
+            # torch.nn.Tanh(),
+            torch.nn.SELU(),
             # torch.nn.Sigmoid(),
-            #
-            # torch.nn.Linear(feats * hid_times, feats),
-            # torch.nn.Dropout(p=0.5),
-            # torch.nn.SELU()
+
+            torch.nn.Linear(feats * hid_times * 4, feats * hid_times * 8),
+            torch.nn.Dropout(p=self._dropout),
+            torch.nn.SELU(),
+            # torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
         )
 
         self.decoder1 = torch.nn.Sequential(
-            # torch.nn.Linear(feats, feats * hid_times),
-            # torch.nn.Dropout(p=0.5),
-            # torch.nn.Sigmoid(),
-            #
-            # torch.nn.Linear(feats * hid_times, feats * hid_times * 2),
-            # torch.nn.Dropout(p=0.5),
-            # # torch.nn.SELU(),
-            # torch.nn.Sigmoid(),
-
-            torch.nn.Linear(feats * hid_times * 2, feats * hid_times),
+            torch.nn.Linear(feats * hid_times * 8, feats * hid_times * 4),
             torch.nn.Dropout(p=self._dropout),
             torch.nn.SELU(),
             # torch.nn.Sigmoid(),
 
+            torch.nn.Linear(feats * hid_times * 4, feats * hid_times),
+            torch.nn.Dropout(p=self._dropout),
+            torch.nn.SELU(),
+            # torch.nn.Tanh(),
+            # torch.nn.SELU(),
+            # torch.nn.Sigmoid(),
+
             torch.nn.Linear(feats * hid_times, feats),
             torch.nn.Dropout(p=self._dropout),
-            torch.nn.SELU()
+            # torch.nn.Tanh(),
+            torch.nn.SELU(),
             # torch.nn.Sigmoid(),
         )
 
@@ -183,34 +184,27 @@ class TranAD(nn.Module):
             torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
 
-            torch.nn.Linear(feats * hid_times, feats * hid_times * 2),
+            torch.nn.Linear(feats * hid_times, feats * 2 * hid_times),
             torch.nn.Dropout(p=self._dropout),
             torch.nn.SELU(),
             # torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
 
-            # torch.nn.Linear(feats * hid_times * 2, feats * hid_times),
-            # torch.nn.Dropout(p=0.5),
-            # torch.nn.Sigmoid(),
-            #
-            # torch.nn.Linear(feats * hid_times, feats),
-            # torch.nn.Dropout(p=0.5),
-            # torch.nn.SELU()
-            # torch.nn.Sigmoid(),
+            # torch.nn.Linear(feats * 2 * hid_times * 2, feats * 2 * hid_times * 4),
+            # torch.nn.Dropout(p=self._dropout),
+            # torch.nn.SELU(),
         )
 
         # Building an decoder
         self.decoder2 = torch.nn.Sequential(
-            # torch.nn.Linear(feats, feats * hid_times),
-            # torch.nn.Dropout(p=0.5),
-            # torch.nn.Sigmoid(),
-            #
-            # torch.nn.Linear(feats * hid_times, feats * hid_times * 2),
-            # torch.nn.Dropout(p=0.5),
-            # # torch.nn.SELU(),
+
+            torch.nn.Linear(feats * hid_times * 8, feats * hid_times * 4),
+            torch.nn.Dropout(p=self._dropout),
+            torch.nn.SELU(),
+            # torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
 
-            torch.nn.Linear(feats * 2, feats * hid_times),
+            torch.nn.Linear(feats * hid_times * 4, feats * hid_times),
             torch.nn.Dropout(p=self._dropout),
             torch.nn.SELU(),
             # torch.nn.Tanh(),
@@ -218,9 +212,12 @@ class TranAD(nn.Module):
 
             torch.nn.Linear(feats * hid_times, feats),
             torch.nn.Dropout(p=self._dropout),
-            # torch.nn.SELU()
+            torch.nn.SELU()
+            # torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
         )
+
+        self.norm = LayerNorm(feats * 2)
 
         for m in self.encoder1:
             if isinstance(m, nn.Linear):
@@ -249,24 +246,42 @@ class TranAD(nn.Module):
                 param = param * (desired / (eps + norm))
 
     def forward(self, src):
-        # encoder1_input = self.pos_encoder(src * math.sqrt(self.n_feats))
-        # encoude1 = self.transformer_encoder(encoder1_input)
-        encoder1 = self.encoder1(src)
+        # src: (S, N, E)(S, N, E).
+        # 其中S是源序列长度，T是目标序列长度，N是批处理大小，E是特征编号
+
+        # encoder1 = self.encoder1(src)
+        # reconstruct1 = self.decoder1(encoder1)
+        # rec_loss1 = (reconstruct1 - src) ** 2
+        # if self._use_ae2:
+        #     ed2_inputs = torch.cat([src, rec_loss1], axis=2)
+        #     encoder2 = self.transformer_encoder2(ed2_inputs)
+        #     reconstruct2 = self.decoder2(encoder2)
+        # else:
+        #     reconstruct2 = None
+        # self.max_norm()
+
+
         # ed2_inputs = torch.cat([src, last_loss], axis=2)
         # encoder1 = self.transformer_encoder1(ed2_inputs)
 
-        reconstruct = self.decoder1(encoder1)
-        rec_loss = (reconstruct - src) ** 2
-        # rec_loss = torch.mean(rec_loss, dim=0)
+        # 先使用正常输入与重构误差 全 0 进行重构，得到重构误差 rec_loss
+        rec_loss = torch.zeros_like(src)
+        modle_input = torch.cat((src, rec_loss), dim=2)
+        # modle_input = self.norm(modle_input)
+        ae_input = self.transformer_encoder2(modle_input)
+        encoder1 = self.encoder1(ae_input)
+        reconstruct1 = self.decoder1(encoder1)
+        rec_loss1 = (reconstruct1 - src) ** 2
 
-        # encoder2 = self.encoder2(rec_loss)
-        # encoder2 = self.pos_encoder(src * math.sqrt(self.n_feats))
-        ed2_inputs = torch.cat([src, rec_loss], axis=2)
-        encoder2 = self.transformer_encoder2(ed2_inputs)
-        reconstruct_resc = self.decoder2(encoder2)
+        # 重构误差 rec_loss 不为零了 ，再传入模型，得到的误差可能会放大差异
+        modle_input = torch.cat((src, rec_loss1), dim=2)
+        ae_input = self.transformer_encoder2(modle_input)
+        encoder2 = self.encoder1(ae_input)
+        reconstruct2 = self.decoder2(encoder2)
+
         self.max_norm()
-        return reconstruct, rec_loss, reconstruct_resc
 
+        return reconstruct1, reconstruct2, rec_loss1
 
 class Transformer_ad(BuildingBlock):
     def __init__(self,
@@ -276,11 +291,7 @@ class Transformer_ad(BuildingBlock):
                  num_head=4,
                  hidden_layers=4,
                  batch_size=64,
-                 use_timedelta=True,
-                 use_ptidfreq=True,
-                 use_usa=True,
-                 use_usc=True,
-                 use_freq=True,
+                 use_dict:dict={},
                  model_path='Models/GPMODEL',
                  scenario_path='L:\\hids\\dataSet\\GP_DATA_DIR'):
         """
@@ -294,8 +305,8 @@ class Transformer_ad(BuildingBlock):
             force_train:        force training of Net
         """
         super().__init__()
-        self._dependency_list = []
 
+        self._dependency_list = []
         # hyper parameter
         self._dropout = dropout
         self._input_dim = input_dim
@@ -304,16 +315,20 @@ class Transformer_ad(BuildingBlock):
         self._hidden_layers = hidden_layers
         self._num_head = num_head
 
-        self._use_timedelta = use_timedelta
-        self._use_ptidfreq = use_ptidfreq
-        self._use_usa = use_usa
-        self._use_usc = use_usc
-        self._use_freq = use_freq
+        self._use_timedelta = use_dict['use_timedelta']
+        self._use_ptidfreq = use_dict['use_ptidfreq']
+        self._use_usa = use_dict['use_usa']
+        self._use_usc = use_dict['use_usc']
+        self._use_freq = use_dict['use_freq']
+        self._use_sc_max_params = use_dict['use_sc_max_params']
+        self._use_ret = use_dict['use_ret']
+        self._use_ae2 = use_dict['mode_use_ae2']
+        self.zscore_nor = StandardScaler()
         model_dir = os.path.split(model_path)[0]
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
         self._model_path = model_path
-
+        print(f'model path {model_path}')
         self._training_data = {
             'x': [],
             'y': []
@@ -340,13 +355,14 @@ class Transformer_ad(BuildingBlock):
         self._batch_counter_test = 0
 
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.Net = TranAD(self._input_dim, lr=0.001, dropout=self._dropout, nhead = self._num_head)
+        self.Net = TranAD(self._input_dim, lr=0.001, dropout=self._dropout, nhead = self._num_head, use_ae2 = self._use_ae2)
         self.Net.to(self._device)
         # self._last_loss = torch.zeros(1, 16, self._input_dim).to(self._device)
         # self._cal_last_loss = torch.zeros(1, 1, self._input_dim).to(self._device)
         self._loss = torch.nn.MSELoss()
         self._calloss = torch.nn.MSELoss(reduction='none')
-        self.pid_tid_max = [0] * (4 + 1 + 1 + 1)
+        # ptid + usa + usc + freq + sc_max
+        self.pid_tid_max = [0] * 100
         self._need_prepare_data = True
         self._dataset_dir = scenario_path
         if not os.path.exists(self._dataset_dir):
@@ -390,19 +406,34 @@ class Transformer_ad(BuildingBlock):
             else:
                 tmp_x = recoding_data[0][:, index_uai:index_uai + 1]
             if not test:
-                self.pid_tid_max[normal_max_ptid_end:normal_max_uai_end] = np.fmax(
-                    self.pid_tid_max[normal_max_ptid_end:normal_max_uai_end],
-                    np.max(recoding_data[0][:, index_uai:index_uai + 1], axis=0))
+                self.pid_tid_max[normal_max_ptid_end] = max(
+                    self.pid_tid_max[normal_max_ptid_end], recoding_data[0][:, index_uai].max())
 
         if self._use_usc:
             if len(tmp_x) > 0:
                 tmp_x = np.hstack((tmp_x, recoding_data[0][:, index_usi:index_usi + 1]))
             else:
-                tmp_x = recoding_data[0][:, index_usi:index_usi + 1]
+                try:
+                    tmp_x = recoding_data[0][:, index_usi:index_usi + 1]
+                except:
+                    print('Wrong Data')
+                    return []
             if not test:
-                self.pid_tid_max[normal_max_uai_end:normal_max_usi_end] = np.fmax(
-                    self.pid_tid_max[normal_max_uai_end:normal_max_usi_end],
-                    np.max(recoding_data[0][:, index_usi:index_usi + 1], axis=0))
+                self.pid_tid_max[normal_max_uai_end] = max(
+                    self.pid_tid_max[normal_max_uai_end], recoding_data[0][:, index_usi].max())
+
+        if self._use_ret:
+            if len(tmp_x) > 0:
+                tmp_x = np.hstack((tmp_x, recoding_data[0][:, index_ret_total:index_ret_total + 1]))
+            else:
+                try:
+                    tmp_x = recoding_data[0][:, index_ret_total:index_ret_total + 1]
+                except:
+                    print('Wrong Data')
+                    return []
+            if not test:
+                self.pid_tid_max[normal_max_freq_end] = max(
+                    self.pid_tid_max[normal_max_freq_end], recoding_data[0][:, index_ret_total].max())
 
         if self._use_freq:
             freq_colum = np.array([0] * len(recoding_data[0]))
@@ -415,8 +446,26 @@ class Transformer_ad(BuildingBlock):
                 tmp_x = freq_colum
 
             if not test:
-                self.pid_tid_max[normal_max_usi_end:normal_max_freq_end] = np.fmax(
-                    self.pid_tid_max[normal_max_usi_end:normal_max_freq_end], freq_colum.max())
+                self.pid_tid_max[normal_max_usi_end] = max(
+                    self.pid_tid_max[normal_max_usi_end], freq_colum.max())
+
+        if self._use_sc_max_params:
+            # sc_max_freq = np.array([0] * 8)
+            if len(tmp_x) > 0:
+                # 48 49 50 51 52 53 54 55 56
+                # 1  2  3  4  5  6  7  8  9
+                tmp_x = np.hstack((tmp_x, recoding_data[0][:, index_sc_max_start:53]))
+                tmp_x = np.hstack((tmp_x, recoding_data[0][:, 54:56]))
+                tmp_x = np.hstack((tmp_x, recoding_data[0][:, 57:index_sc_max_end]))
+            else:
+                # tmp_x = recoding_data[0][:, index_sc_max_start:index_sc_max_end]
+                tmp_x = recoding_data[0][:, index_sc_max_start:53]
+                tmp_x = recoding_data[0][:, 54:56]
+                tmp_x = np.hstack((tmp_x, recoding_data[0][:, 57:index_sc_max_end]))
+            if not test:
+                self.pid_tid_max[normal_sc_max_freq_end:normal_sc_max_freq_end + 14] = np.maximum(
+                    self.pid_tid_max[normal_sc_max_freq_end:normal_sc_max_freq_end + 14],
+                    np.max(recoding_data[0][:, index_sc_max_start:index_sc_max_end], axis=0))
 
         return tmp_x
 
@@ -503,16 +552,29 @@ class Transformer_ad(BuildingBlock):
             local_bs = inputs.shape[0]
             inputs = inputs.view(local_bs, -1, self._input_dim)
             window = inputs.permute(1, 0, 2)
-            reconstruct, rec2_input, reconstruct_resc = self.Net(window)
+            # if self._use_ae2:
+            #     reconstruct, rec2_input, reconstruct_resc = self.Net(window)
+            #     val_loss = self._calloss(rec2_input, reconstruct_resc)
+            # else:
+            #     # No AE 2
+            #     reconstruct, rec2_input, _ =  self.Net(window)
+            #     val_loss = self._calloss(reconstruct, window)
 
-            val_loss = self._calloss(rec2_input, reconstruct_resc)
-            val_loss = torch.mean(val_loss, dim=0)
+            reconstruct1, reconstruct2, rec_loss1 = self.Net(window)
+            loss = self._calloss(window,reconstruct2)
 
-            return val_loss.cpu().detach().numpy(), self._test_data['y']
+            rec_loss1 = rec_loss1.view(-1, self._input_dim)
+            test_loss = torch.mean(loss, dim=0)
+
+            return test_loss.cpu().detach().numpy(), rec_loss1.cpu().detach().numpy(), self._test_data['x'], self._test_data['y']
         else:
             return None, None
 
-    def data_Normalization(self, data):
+    def data_Normalization(self, data, is_train=False):
+        # if is_train:
+        #     res = self.zscore_nor.fit_transform(data)
+        # else:
+        #     res = self.zscore_nor.transform(data)
         data = np.array(data)
         index = 0
         if self._use_timedelta:
@@ -531,17 +593,35 @@ class Transformer_ad(BuildingBlock):
             data[:, index] = data[:, index] / (self.pid_tid_max[5] + 1)
             index += 1
 
-        if self._use_freq:
+        if self._use_ret:
             data[:, index] = data[:, index] / (self.pid_tid_max[6] + 1)
+            index += 1
+
+        if self._use_freq:
+            data[:, index] = data[:, index] / (self.pid_tid_max[7] + 1)
+            index += 1
+
+        if self._use_sc_max_params:
+            for i in range(14):
+                if i == 8 or i == 5:
+                    continue
+                if i > 8:
+                    j = i - 2
+                elif i > 5:
+                    j = i - 1
+                else:
+                    j = i
+
+                data[:, index + j] = data[:, index + j] / (self.pid_tid_max[8 + i] + 1)
 
         # df[:39] = df[:39] * 0.2
         # df[39:] = df[39:] * 0.8
-        return  data
+        return data
 
     def _create_train_data(self, val: bool):
         print(f'pid_tid_max {self.pid_tid_max}')
         if not val:
-            self._training_data['x'] = self.data_Normalization(self._training_data['x']).astype(np.float32)
+            self._training_data['x'] = self.data_Normalization(self._training_data['x'], True).astype(np.float32)
             x_tensors = Variable(torch.Tensor(self._training_data['x'])).to(self._device)
             # y_tensors = Variable(torch.Tensor(self._training_data['y'])).to(self._device)
             # y_tensors = y_tensors.long()
@@ -588,30 +668,15 @@ class Transformer_ad(BuildingBlock):
                               unit=" epochs"):
                 n = epoch + 1
                 self.Net.train()
-                self.gp_pos = 0
-                time_mat = np.ones((self._input_dim,self._input_dim))
-                row, col = np.diag_indices_from(time_mat)
-                time_mat[row, col] = 0
-                time_mat_tentor = torch.Tensor(time_mat).to(self._device)
-
                 for i, inputs in enumerate(train_dataloader, 0):
-                    time_mat[self.gp_pos] = 0.5
-                    self.gp_pos = i % self._input_dim
-
-                    for j in range(0, 2):
-                        inputs = inputs + (time_mat_tentor[self.gp_pos] * j)
-                        local_bs = inputs.shape[0]
-                        inputs = inputs.view(local_bs, -1, self._input_dim)
-                        window = inputs.permute(1, 0, 2)
-
-                        reconstruct, rec2_input, reconstruct_resc = self.Net(window)
-                        if j == 0:
-                            train_loss = (1 / n) * self._loss(window, reconstruct) + (1 - 1 / n) * self._loss(rec2_input, reconstruct_resc)
-                        else:
-                            # train_loss = self._loss(window[:,:,self.gp_pos], reconstruct[:,:,self.gp_pos])
-                            train_loss = (1 / n) * self._loss(window[:,:,self.gp_pos], reconstruct[:,:,self.gp_pos]) + (1 - 1 / n) * self._loss(rec2_input[:,:,self.gp_pos],
-                                                                                                 reconstruct_resc[:,:,self.gp_pos])
-                        # train_loss = self._loss(window, reconstruct) + self._loss(rec2_input, reconstruct_resc)
+                    for j in range(0, 1):
+                        # tmp_inputs = inputs + (time_mat_tentor[self.gp_pos] * j)
+                        tmp_inputs = inputs
+                        local_bs = tmp_inputs.shape[0]
+                        tmp_inputs = tmp_inputs.view(local_bs, -1, self._input_dim)
+                        window = tmp_inputs.permute(1, 0, 2)
+                        reconstruct1, reconstruct2, rec_loss1= self.Net(window)
+                        train_loss = (1 / n) * self._loss(window, reconstruct1) + (1 - 1 / n) * self._loss(window,  reconstruct2)
                         optimizer.zero_grad()
                         # calculates the loss of the loss function
                         train_loss.backward()
@@ -628,9 +693,16 @@ class Transformer_ad(BuildingBlock):
                     local_bs = inputs.shape[0]
                     inputs = inputs.view(local_bs, -1, self._input_dim)
                     window = inputs.permute(1, 0, 2)
-                    reconstruct, rec2_input, reconstruct_resc = self.Net(window)
+                    # if self._use_ae2:
+                    #     reconstruct, rec2_input, reconstruct_resc = self.Net(window)
+                    # else:
+                    #     reconstruct, rec2_input, _= self.Net(window)
 
-                    val_loss = self._loss(window, reconstruct) + self._loss(rec2_input, reconstruct_resc)
+                    reconstruct1, reconstruct2, rec_loss1= self.Net(window)
+                    train_loss = (1 / n) * self._loss(window, reconstruct1) + (1 - 1 / n) * self._loss(window, reconstruct2)
+                    val_loss = self._loss(window, reconstruct2)
+
+                    # val_loss = self._loss(window, reconstruct)
 
                 print(f"Epoch: {epoch}, L1 {train_loss} val_loss: {val_loss}")
 
@@ -661,9 +733,16 @@ class Transformer_ad(BuildingBlock):
             x_tensor = torch.Tensor(x_array).to(self._device)
             inputs = x_tensor.view(1, -1, self._input_dim)
             window = inputs.permute(1, 0, 2)
-            reconstruct, rec2_input, reconstruct_resc = self.Net(inputs)
+            # if self._use_ae2:
+            #     reconstruct, rec2_input, reconstruct_resc = self.Net(window)
+            #     loss = self._calloss(rec2_input, reconstruct_resc).reshape(-1, self._input_dim)
+            # else:
+            #     reconstruct, rec2_input, _ = self.Net(window)
+            #     loss = self._calloss(window, reconstruct).reshape(-1, self._input_dim)
 
-            loss = self._calloss(rec2_input, reconstruct_resc).reshape(-1, self._input_dim)
+            reconstruct1, reconstruct2, rec_loss1= self.Net(window)
+            loss = self._calloss(window,reconstruct2).reshape(-1, self._input_dim)
+
             return loss.cpu().detach().numpy()
         else:
             return None

@@ -13,7 +13,7 @@ from dataloader.syscall import Syscall
 from dataloader.resource_statistic import ResourceStatistic
 from dataloader.syscall_2021 import Syscall2021
 
-DATAOUT_DIR='L:/hids/dataSet/GP_DATA_DIR'
+DATAOUT_DIR='K:/hids/GP_DATA_DIR'
 
 class Recording2021(BaseRecording):
     """
@@ -45,7 +45,7 @@ class Recording2021(BaseRecording):
         self.name = name
         self._direction = direction
         self.check_recording()
-
+        self.path_list = self.path.split('\\')
 
     def syscalls(self) -> str:
         """
@@ -84,8 +84,17 @@ class Recording2021(BaseRecording):
         """
         try:
             with zipfile.ZipFile(self.path, 'r') as zipped:
+                # try: engine='python',
                 with zipped.open(self.name + '.sc') as unzipped:
-                    df = pd.read_csv(unzipped, delim_whitespace = True, index_col=False, names = ['time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'RET', 'ARGS'])
+                    df = pd.read_csv(unzipped, delim_whitespace=True, index_col=False, error_bad_lines=False, names=['time','UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'RET', 'ARGS1', 'ARGS2', 'ARGS3', 'ARGS4'])
+
+                # except Exception as e:
+                #     print('Frist Read Error')
+                #     with zipped.open(self.name + '.sc') as unzipped:
+                #         df = pd.read_csv(unzipped, delim_whitespace=True, index_col=False, skiprows=1,
+                #                          error_bad_lines=False,
+                #                          names=['time', 'UserID', 'PID', 'ProcessName', 'TID', 'syscall', 'DIR', 'RET',
+                #                                 'ARGS'])
                     # df.time = pd.to_datetime(df['time'])
                     # for period_time, period_cont in df.resample('900L', on='time'):
                     yield df
@@ -95,11 +104,10 @@ class Recording2021(BaseRecording):
 
     def df_and_np(self) -> tuple:
         try:
-            path_list = self.path.split('\\')
             if 'test' in self.path:
-                file_path = os.path.join(DATAOUT_DIR, path_list[-4], path_list[-3], path_list[-2], self.name)
+                file_path = os.path.join(DATAOUT_DIR, self.path_list [-4], self.path_list [-3], self.path_list [-2], self.name)
             else:
-                file_path = os.path.join(DATAOUT_DIR, path_list[-3], path_list[-2], self.name)
+                file_path = os.path.join(DATAOUT_DIR, self.path_list [-3], self.path_list [-2], self.name)
             array_file = os.path.join(file_path, 'array.npy')
             df_file = os.path.join(file_path, 'df_all.pkl')
             arr_all = None
@@ -124,6 +132,27 @@ class Recording2021(BaseRecording):
             #     df_file = file.replace('FinalData', 'DataFrame').replace('npy', 'pkl')
             #     df = pd.read_pickle(df_file)
             #     yield tuple([datas,df])
+        except Exception as ex:
+            raise Exception(f'Error while get data working with file: {self.name} at {self.path}, {ex}')
+
+    def period_df(self):
+        try:
+            if 'test' in self.path:
+                file_path = os.path.join(DATAOUT_DIR, self.path_list [-4], self.path_list [-3], self.path_list [-2], self.name)
+            else:
+                file_path = os.path.join(DATAOUT_DIR, self.path_list [-3], self.path_list [-2], self.name)
+
+            df_file = os.path.join(file_path, 'df_all.pkl')
+            df_all = None
+
+            if os.path.exists(df_file):
+                with open(df_file, 'rb') as f:
+                    df_all = pickle.load(f)
+            else:
+                print(f'{df_file} is not exists')
+
+            yield df_all
+
         except Exception as ex:
             raise Exception(f'Error while get data working with file: {self.name} at {self.path}, {ex}')
 

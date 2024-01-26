@@ -62,7 +62,7 @@ def find_results_with_specific_config():
         ]
     }
 
-    results = ResultQuery(collection_name="experiments_test").find_results(
+    results = ResultQuery().find_results(
         algorithms=["LSTM"],
         scenarios=["CVE-2017-7529", "CVE-2014-0160"],
         directions=[Direction.BOTH],

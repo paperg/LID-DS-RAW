@@ -1,5 +1,6 @@
 import os
 import sys
+sys.path.append('.')
 import networkx as nx
 from tqdm import tqdm
 import pandas as pd
@@ -8,6 +9,7 @@ import json
 from urllib.parse import urlparse
 from string import digits
 import pickle
+import re
 
 # from algorithms.features.impl.syscall_name import SyscallName
 # from algorithms.features.impl.int_embedding import IntEmbedding
@@ -27,7 +29,7 @@ from dataloader.direction import Direction
 from multiprocessing import Process
 
 work_dir = os.path.join('L:/hids', "dataSet")
-DATAOUT_DIR = os.path.join(work_dir, 'GP_DATA_DIR')
+DATAOUT_DIR = os.path.join('K:/hids', 'GP_DATA_DIR')
 
 TRAINING = 'training'
 VALIDATION = 'validation'
@@ -52,7 +54,7 @@ index_usi = 46
 # lseek : lseek < res=0
 # pwrite : res 成功写入字节数 data=... 数据
 # pread : res 成功读取字节数 data=... 数据
-SYSCALLS_ARGS_RET = ['write', 'writev', 'read', 'mmap', 'brk', 'sendto', 'recvfrom', 'lseek', 'pwrite', 'pread', 'sendfile']
+SYSCALLS_ARGS_RET = ['write', 'mmap', 'munmap', 'brk', 'writev', 'read', 'sendto', 'recvfrom', 'lseek', 'pwrite', 'pread', 'sendmsg', 'recvmsg', 'sendfile']
 
 
 def default_dump(obj):
@@ -66,35 +68,45 @@ def default_dump(obj):
 
 def df_get_other_feature(row, pnr):
     scint, ret, retReal = pnr._calculate_m(row.syscall, row.RET)
-    if row['syscall'] in ['mmap', 'brk']:
-        retReal = int(row['ARGS'].split('=')[1])
+    # cal size
+    if row['syscall'] in ['mmap', 'munmap','brk']:
+        retReal = int(row['ARGS1'].split('=')[1])
 
     file_path = get_filepath(row)
 
     return scint, ret, retReal, file_path
 
+getfile_from_in_ret_list = ['write', 'writev', 'pwrite', 'pread', 'close', 'getdents64', 'getdents', 'ioctl', 'execve', 'lseek', 'fcntl', 'dup', 'flock', 'fstat']
+getfile_from_out_ret_list = ['openat']
+getfile_from_arg1_list = ['execve', 'lstat', 'chmod', 'open', 'clone', 'vfork', 'access', 'stat', 'unlink', 'getcwd', 'mkdir', 'rename', 'chdir']
+
+syscall_need_in_list =  ['write', 'writev', 'pwrite', 'pread', 'close', 'getdents64', 'getdents', 'ioctl', 'execve', 'lseek', 'fcntl', 'dup', 'flock', 'fstat', 'sendfile', 'mmap']
 def get_filepath(row):
-    raw_arg = row['ARGS']
-    if row['syscall'] == 'open':
-        a, file_path = raw_arg.split('=')
-        if a != 'name':
-            print(f'{a} is not name')
-    elif row['syscall'] == 'stat':
-        a, file_path = raw_arg.split('=')
-        if a != 'path':
-            print(f'{a} is not path')
-    elif row['syscall'] == 'clone':
-        a, file_path = raw_arg.split('=')
-        if a != 'exe':
-            print(f'{a} is not exe')
-    elif row['syscall'] == 'execve':
-        a, file_path = raw_arg.split('=')
-        if a != 'exe':
-            print(f'{a} is not exe')
+    syscall = row['syscall']
+    if row['DIR'] == '>':
+        if syscall in getfile_from_in_ret_list:
+            _, file_path = row['RET'].split('=')
+        elif syscall == 'sendfile':
+            _, file_path = row['ARGS1'].split('=')
+        elif syscall == 'mmap':
+            _, file_path = row['ARGS4'].split('=')
+        else:
+            return np.nan
     else:
-        return np.nan
+        if syscall == 'openat':
+            _, file_path = row['RET'].split('=')
+        elif syscall in getfile_from_arg1_list:
+            _, file_path = row['ARGS1'].split('=')
+        else:
+            return np.nan
 
     return process_path(file_path)
+
+def df_get_file_from_path(row, train_seen_files, train_seen_pre_dir, pname):
+    file = row['Params'].split('/')[-1]
+    last_x = row['Params'].rfind('/')
+    pre = row['Params'][:last_x]
+    return (file not in train_seen_files[pname]) and (pre not in train_seen_pre_dir[pname])
 
 def process_path(file_path_i):
     PATH_LENGTH = 3
@@ -116,6 +128,8 @@ def process_path(file_path_i):
 
     processed_file_path = file_path_i.rsplit('/')
     path_last_element = processed_file_path[-1]
+    if '>' in processed_file_path[0]:
+        processed_file_path[0] = ''
 
     # we clean the path from random characters and numbers
     if path_last_element.islower():
@@ -198,7 +212,10 @@ def  cal_time_delte(df):
     time_bin = category_count.value_counts(sort=False).to_list()
     time_bin.append(most_time_cnt)
     normal_max = sum(time_bin)
-    time_bin = [x / normal_max for x in time_bin]
+
+    if normal_max > 0:
+        time_bin = [x / normal_max for x in time_bin]
+
     return time_bin
 
 def cal_pid_tid_switch_frequency(df):
@@ -216,95 +233,122 @@ def create_scg_for_second(df, scg_path):
     #Create a syscall graph
     scg = m_SystemCallGraph()
     df.apply(df_create_scgraph, args=(scg,), axis=1)
-
-    for pname in scg._graphs.keys():
-        nx.write_graphml(scg._graphs[pname],
-                                   os.path.join(scg_path, str(df.iloc[-1]['time']) + '_' + pname + '.xml'), encoding='utf-8')
+    # for pname in tmp_scg_second.keys():
+    #     nx.write_graphml(tmp_scg_second[pname],
+    #                                os.path.join(scg_path, str(df.iloc[-1]['time']) + '_' + pname + '.xml'), encoding='utf-8')
     return scg
 
-def get_uai(sequence_data, seen_args, scg_second, train_scg, exploit_start_time, result_array, save_dir):
+def create_only_sc_scg_for_second(df, scg_path):
+    #Create a syscall graph
+    scg = m_SystemCallGraph()
+    df.apply(df_create_scgraph, args=(scg, True), axis=1)
+
+    # for pname in tmp_scg_second.keys():
+    #     nx.write_graphml(tmp_scg_second[pname],
+    #                                os.path.join(scg_path, str(df.iloc[-1]['time']) + '_' + pname + '.xml'), encoding='utf-8')
+    return scg
+
+def get_uai(sequence_data, seen_args, train_seen_files, train_seen_pre_dir, scg_second, train_scg, exploit_start_time, result_array, save_dir):
     # open : open < fd=13(<f>/etc/apache2/.htpasswd) name=file_name
     # stat  : stat < res=0 path=/var/www/private/upload.php
     # clone : clone < res=466 exe=/usr/sbin/apache2
     # execve:
     uai = 0
-    cur_uai = 0
-    cur_uai_set = 0
-    for pname in sequence_data['ProcessName'].dropna().unique():
+    weight_sum = 0
+    distinct_syscalls_with_unseen_args = []
+    for pname in scg_second._graphs:
         tmp_result = []
         if pname not in seen_args:
             print(f'Process {pname} not in seen_args, Skip')
             continue
-        seen_args_second_df = sequence_data[sequence_data['ProcessName'] == pname][['time', 'UserID', 'syscallInt','Ret','Params']].dropna()
+
+        if pname not in train_scg._graphs:
+            print(f'Process {pname} not in Train SCG Dict, Skip')
+            continue
+
+        seen_args_second_df = sequence_data[sequence_data['ProcessName'] == pname][['time', 'syscallInt','Ret','Params']].dropna()
         if len(seen_args_second_df) > 0:
 
             unseen_args = seen_args_second_df.loc[~seen_args_second_df.Params.isin(seen_args[pname])]
             if len(unseen_args) > 0:
-                result = {}
-                distinct_unseen_args = set(unseen_args['Params'])
-                # distinct_syscalls_with_unseen_args = set(unseen_args.apply(lambda X: (X.syscallInt, X.Ret), axis=1))
-                distinct_syscalls_with_unseen_args = set(unseen_args.apply(lambda X: X.syscallInt, axis=1))
-                in_centrality = []
-                out_centrality = []
-                train_in_centrality = []
-                train_out_centrality = []
+                unseen_args_sel = unseen_args.apply(df_get_file_from_path, args=(train_seen_files,train_seen_pre_dir, pname,), axis=1)
+                unseen_args = unseen_args.loc[unseen_args_sel]
+                if len(unseen_args) > 0:
+                    result = {}
+                    distinct_unseen_args = set(unseen_args['Params'])
+                    # distinct_syscalls_with_unseen_args = set(unseen_args.apply(lambda X: (X.syscallInt, X.Ret), axis=1))
+                    distinct_syscalls_with_unseen_args = set(unseen_args.apply(lambda X: X.syscallInt, axis=1))
+                    # in_centrality = []
+                    # out_centrality = []
+                    # train_in_centrality = []
+                    # train_out_centrality = []
+                    centrality = []
+                    for node in distinct_syscalls_with_unseen_args:
+                        node = str(node)
+                        cur_usa = len(distinct_unseen_args)
+                        cur_uai = len(distinct_syscalls_with_unseen_args)
 
-                for node in distinct_syscalls_with_unseen_args:
-                    node = str(node)
-                    uan_in_centrality = nx.in_degree_centrality(scg_second._graphs[pname]).get(node)
-                    uan_out_centrality = nx.out_degree_centrality(scg_second._graphs[pname]).get(node)
+                        uan_in_centrality = nx.in_degree_centrality(scg_second._graphs[pname]).get(node)
+                        uan_out_centrality = nx.out_degree_centrality(scg_second._graphs[pname]).get(node)
 
-                    train_uan_in_centrality = nx.in_degree_centrality(train_scg._graphs[pname]).get(node)
-                    train_uan_out_centrality = nx.out_degree_centrality(train_scg._graphs[pname]).get(node)
+                        train_uan_in_centrality = nx.in_degree_centrality(train_scg._graphs[pname]).get(node)
+                        train_uan_out_centrality = nx.out_degree_centrality(train_scg._graphs[pname]).get(node)
 
-                    if isinstance(uan_in_centrality, type(None)):
-                        uan_in_centrality = 0
+                        if isinstance(uan_in_centrality, type(None)):
+                            uan_in_centrality = 0
 
-                    if isinstance(uan_out_centrality, type(None)):
-                        uan_out_centrality = 0
+                        if isinstance(uan_out_centrality, type(None)):
+                            uan_out_centrality = 0
 
-                    in_centrality.append(uan_in_centrality)
-                    out_centrality.append(uan_out_centrality)
-                    train_in_centrality.append(train_uan_in_centrality)
-                    train_out_centrality.append(train_uan_out_centrality)
+                        centrality.extend([node, uan_in_centrality, uan_out_centrality, train_uan_in_centrality, train_uan_out_centrality])
+                        if train_scg._graphs[pname].has_node(node):
+                            uai += (1 - train_scg._graphs[pname].nodes[node]['Weight'])
+                            weight_sum += train_scg._graphs[pname].nodes[node]['Weight']
+                        else:
+                            uai += 1
+                        # in_centrality.append(uan_in_centrality)
+                        # out_centrality.append(uan_out_centrality)
+                        # train_in_centrality.append(train_uan_in_centrality)
+                        # train_out_centrality.append(train_uan_out_centrality)
+                    uai = uai * cur_usa
+                    # Display
+                    is_exploit = 0
+                    if exploit_start_time != 0:
+                        if sequence_data.iloc[-1]['time'] > exploit_start_time:
+                            is_exploit = 1
 
-                cur_uai = len(distinct_unseen_args)
-                cur_usa = len(unseen_args)
-                uai += cur_uai
-                # Display
-                is_exploit = 0
-                if exploit_start_time != 0:
-                    if sequence_data.iloc[-1]['time'] > exploit_start_time:
-                        is_exploit = 1
+                    result['Procee Name'] = pname
+                    result['exploit_start_time'] = exploit_start_time
+                    result['Current Time'] = sequence_data.iloc[-1]['time']
+                    result['is_exploit'] = is_exploit
+                    result['sc unseen args num'] = cur_usa
+                    result['unseen args num'] = cur_uai
+                    result['uai'] = uai
+                    result['weight_sum'] = weight_sum
+                    result['usa_file'] = list(distinct_unseen_args)
+                    result['node all number'] = len(unseen_args)
+                    result['node number'] = list(distinct_syscalls_with_unseen_args)
+                    result['centrality'] = centrality
 
-                result['Procee Name'] = pname
-                result['exploit_start_time'] = exploit_start_time
-                result['Current Time'] = float(sequence_data.iloc[-1]['time'])
-                result['is_exploit'] = is_exploit
-                result['cur_usa'] = cur_usa
-                result['cur_uai'] = cur_uai
-                result['uai'] = uai
-                if uai > 2:
-                    print(uai)
-                usa_list = unseen_args['Params'].tolist()
-                userId_list = unseen_args['UserID'].tolist()
-                usa_node_list = list(distinct_syscalls_with_unseen_args)
-                for i, key in enumerate(distinct_syscalls_with_unseen_args):
-                    result['distinct_unseen_arg'] = usa_list[i]
-                    result['usa node'] = usa_node_list[i]
-                    result['user ID'] = userId_list[i]
-                    result['uan_in_centrality'] = in_centrality[i]
-                    result['uan_out_centrality'] = out_centrality[i]
-                    result['Train uan_in_centrality'] = train_in_centrality[i]
-                    result['Train uan_out_centrality'] = train_out_centrality[i]
+                    # usa_list = unseen_args['Params'].tolist()
+                    # userId_list = unseen_args['UserID'].tolist()
+                    # usa_node_list = list(distinct_syscalls_with_unseen_args)
+                    # for i, key in enumerate(distinct_syscalls_with_unseen_args):
+                    #     result['distinct_unseen_arg'] = usa_list[i]
+                    #     result['usa node'] = usa_node_list[i]
+                    #     result['user ID'] = userId_list[i]
+                    #     result['uan_in_centrality'] = in_centrality[i]
+                    #     result['uan_out_centrality'] = out_centrality[i]
+                    #     result['Train uan_in_centrality'] = train_in_centrality[i]
+                    #     result['Train uan_out_centrality'] = train_out_centrality[i]
 
                     result_array.append(result)
-                    # tmp_result.append(result)
-                # with open(os.path.join(os.path.join(save_dir, str(sequence_data.iloc[-1]['time']) + '_' + pname + '.json')),
-                #           'w') as f:
-                #     json.dump(tmp_result, f, indent=4, ensure_ascii=True, sort_keys=False)
+                        # tmp_result.append(result)
+                    # with open(os.path.join(os.path.join(save_dir, str(sequence_data.iloc[-1]['time']) + '_' + pname + '.json')),
+                    #           'w') as f:
+                    #     json.dump(tmp_result, f, indent=4, ensure_ascii=True, sort_keys=False)
 
-    return uai
+    return uai, len(distinct_syscalls_with_unseen_args)
 
 def only_sc_get_usi(df, train_seen_only_sc, scg, exploit_start_time, result):
     second_seen_only_sc = {}
@@ -315,7 +359,7 @@ def only_sc_get_usi(df, train_seen_only_sc, scg, exploit_start_time, result):
         if last_time > exploit_start_time:
            is_exploit = 1
 
-    for pname in df['ProcessName'].dropna().unique():
+    for pname in scg._graphs:
         if pname not in second_seen_only_sc:
             second_seen_only_sc[pname] = set()
         second_seen_only_sc[pname] = second_seen_only_sc[pname] | set(df[df.ProcessName == pname]['syscallInt'].unique())
@@ -343,31 +387,49 @@ def only_sc_get_usi(df, train_seen_only_sc, scg, exploit_start_time, result):
 
 def get_usi(last_time, scg_second, scg_train, exploit_start_time, result, save_dir):
     usi = 0
+    usi_degree = 0
+    us_num = 0
     is_exploit = 0
+    weight_all = 0
     s_sc_node = set()
     t_sc_node = set()
     if exploit_start_time != 0:
         if last_time > exploit_start_time:
             is_exploit = 1
 
-    for pname in scg_second._graphs:
+    tmp_scg_second = scg_second._graphs
+
+    for pname in tmp_scg_second:
         if pname not in scg_train._graphs:
             print(f'{pname} not in scg_train, Skip')
             continue
         # sc + ret or sc
-        for u, v in scg_second._graphs[pname].edges():
+        for u, v in tmp_scg_second[pname].edges():
             if not scg_train._graphs[pname].has_edge(u, v):
                 tmp_result = {}
+                src_node_w = 1
+                tar_node_w = 1
                 s_sc_node.add(u)
                 t_sc_node.add(v)
                 has_u = scg_train._graphs[pname].has_node(str(u))
                 has_v = scg_train._graphs[pname].has_node(str(v))
+                if has_u:
+                    weight_all += scg_train._graphs[pname].nodes[u]['Weight']
+                    src_node_w = 1 - scg_train._graphs[pname].nodes[u]['Weight']
 
-                seq_u_in_centrality = nx.in_degree_centrality(scg_second._graphs[pname]).get(u)
-                seq_u_out_centrality = nx.out_degree_centrality(scg_second._graphs[pname]).get(u)
+                if has_v:
+                    weight_all += scg_train._graphs[pname].nodes[v]['Weight']
+                    tar_node_w = 1 - scg_train._graphs[pname].nodes[v]['Weight']
 
-                seq_v_in_centrality = nx.in_degree_centrality(scg_second._graphs[pname]).get(v)
-                seq_v_out_centrality = nx.out_degree_centrality(scg_second._graphs[pname]).get(v)
+                usi += src_node_w
+                usi += tar_node_w
+                us_num += 1
+
+                seq_u_in_centrality = nx.in_degree_centrality(tmp_scg_second[pname]).get(u)
+                seq_u_out_centrality = nx.out_degree_centrality(tmp_scg_second[pname]).get(u)
+
+                seq_v_in_centrality = nx.in_degree_centrality(tmp_scg_second[pname]).get(v)
+                seq_v_out_centrality = nx.out_degree_centrality(tmp_scg_second[pname]).get(v)
 
                 train_u_in_centrality = nx.in_degree_centrality(scg_train._graphs[pname]).get(u)
                 train_u_out_centrality = nx.out_degree_centrality(scg_train._graphs[pname]).get(u)
@@ -375,10 +437,22 @@ def get_usi(last_time, scg_second, scg_train, exploit_start_time, result, save_d
                 train_v_in_centrality = nx.in_degree_centrality(scg_train._graphs[pname]).get(v)
                 train_v_out_centrality = nx.out_degree_centrality(scg_train._graphs[pname]).get(v)
 
+                usi_degree += seq_u_in_centrality
+                usi_degree += seq_u_out_centrality
+
+                usi_degree += seq_v_in_centrality
+                usi_degree += seq_v_out_centrality
+
                 tmp_result['Process Name'] = pname
                 tmp_result['exploit_start_time'] = exploit_start_time
                 tmp_result['Current Time'] = last_time
                 tmp_result['is_exploit'] = is_exploit
+                tmp_result['usi'] = usi
+                tmp_result['usi degree'] = usi_degree
+                tmp_result['us_num'] = us_num
+                tmp_result['weight all'] = weight_all
+                tmp_result['s weight'] = src_node_w
+                tmp_result['t weight'] = tar_node_w
                 tmp_result['Node S'] = u
                 tmp_result['S Exist'] = has_u
                 tmp_result['Node T'] = v
@@ -400,9 +474,9 @@ def get_usi(last_time, scg_second, scg_train, exploit_start_time, result, save_d
                 #               'w') as f:
                 #         json.dump(result, f, indent=4, ensure_ascii=True, sort_keys=False)
 
-        usi += len(s_sc_node) + len(t_sc_node)
+        # usi += len(s_sc_node) + len(t_sc_node)
 
-    return usi
+    return usi, us_num, usi_degree
 
 def get_sc_size_by_df(df, exploit_start_time, sc_size_result):
     result = {}
@@ -434,7 +508,7 @@ def load_dict(name ):
     with open(name + '.pkl', 'rb') as f:
         return pickle.load(f)
 
-def initial_var(scenario_name, trainning_save_all_usi_usa, train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list):
+def initial_var(scenario_name, trainning_save_all_usi_usa, train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list, train_seen_files, train_seen_pre_dir):
     # get Train Seen Args
     if len(train_seen_args) == 0:
         # if it is not training state, load from file, trainning state will save to the file
@@ -442,6 +516,17 @@ def initial_var(scenario_name, trainning_save_all_usi_usa, train_seen_args, trai
             print('Need load train_seen_args form File')
             with open(os.path.join(DATAOUT_DIR, scenario_name, 'All_Seen_Args.json')) as f:
                 train_seen_args = json.load(f)
+
+            for pname in train_seen_args:
+                train_seen_files[pname] = set()
+                train_seen_pre_dir[pname] = set()
+                for fpath in train_seen_args[pname]:
+                    tmp = fpath.split('/')
+                    train_seen_files[pname].add(tmp[-1])
+                    if len(tmp) > 3:
+                        if tmp[1] not in ['etc']:
+                            last_x = fpath.rfind('/')
+                            train_seen_pre_dir[pname].add(fpath[:last_x])
 
     # get Train Seen syscall graph
     if len(train_scg._graphs) == 0:
@@ -478,7 +563,7 @@ def initial_var(scenario_name, trainning_save_all_usi_usa, train_seen_args, trai
                       'r') as f:
                 train_sc_size_list = json.load(f)
 
-    return train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list
+    return train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list, train_seen_files, train_seen_pre_dir
 
 
 def get_recording_expliot_time(dataloader, recording, data_type):
@@ -514,13 +599,13 @@ def check_work_dir(training, recoding_path):
         if not os.path.exists(seensc_path):
             os.mkdir(seensc_path)
 
-        scsize_path = os.path.join(recoding_path, 'SSIZE')
-        if not os.path.exists(scsize_path):
-            os.mkdir(scsize_path)
+    scsize_path = os.path.join(recoding_path, 'SSIZE')
+    if not os.path.exists(scsize_path):
+        os.mkdir(scsize_path)
 
     return data_path, dataframe_path, scg_path, seenarg_path, seensc_path, scsize_path
 
-def get_training_data_feature(sc_df, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args):
+def get_training_data_feature(sc_df, df_for_sc_in, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args):
     ret = get_sc_size_by_df(sc_df, 0, [])
     train_sc_size_list = np.fmax(train_sc_size_list, ret)
     # get syscall graph use syscall + ret
@@ -537,6 +622,13 @@ def get_training_data_feature(sc_df, train_sc_size_list, train_scg, train_scg_on
         if pname not in train_seen_args:
             train_seen_args[pname] = set()
         train_seen_args[pname] = train_seen_args[pname] | set(tmp_df['Params'].dropna().unique())
+
+    if len(df_for_sc_in) > 0:
+        for pname in df_for_sc_in['ProcessName'].dropna().unique():
+            tmp_df = sc_df[sc_df.ProcessName == pname]
+            if pname not in train_seen_args:
+                train_seen_args[pname] = set()
+            train_seen_args[pname] = train_seen_args[pname] | set(tmp_df['Params'].dropna().unique())
 
     return train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args
 
@@ -575,6 +667,29 @@ def save_second_data(recoding_path, numpy_all, df_all, seenarg_path, usa_result,
         with open(os.path.join(scsize_path, 'SC_SIZE.json'), 'w') as f:
             json.dump(sc_size_result, f, indent=4, ensure_ascii=True, sort_keys=False, default=default_dump)
 
+# calculate syscall node weight
+def fit_scg(train_scg):
+    for pname in train_scg._graphs:
+        scg = train_scg._graphs[pname]
+        sum_freq_all = 0
+        for source_node in scg.nodes:
+            for s, t, data in scg.out_edges(nbunch=source_node, data=True):
+                f = data["f"]
+                sum_freq_all += f
+
+        for source_node in scg.nodes:
+            for s, t, data in scg.out_edges(nbunch=source_node, data=True):
+                f = data["f"]
+                scg.add_edge(s, t, f=f, p=f / sum_freq_all)
+
+        for source_node in scg.nodes:
+            node_weight = 0
+            for node in list(scg.predecessors(source_node)):
+                p = scg[node][source_node]['p']
+                node_weight += p
+            scg.nodes[source_node]['Weight'] = node_weight
+            print(f'{source_node} Weight {node_weight}')
+
 # Trining result file path:
 # DATAOUT_DIR/scenario_name/All_Seen_Args.json
 # DATAOUT_DIR/scenario_name/SCG/pname.xml
@@ -582,37 +697,79 @@ def save_second_data(recoding_path, numpy_all, df_all, seenarg_path, usa_result,
 # DATAOUT_DIR/scenario_name/train_seen_sc_only_sc.json
 # DATAOUT_DIR/scenario_name/SSIZE/train_sc_size.json
 
-def save_training_data(training, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args, scenario_name):
+def save_training_data(training, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args, train_seen_files, train_seen_pre_dir, scenario_name):
 
     if not training:
-        return
+        return train_scg._graphs, train_scg_only_sc._graphs, train_seen_args, train_seen_files, train_seen_pre_dir
 
     # if it is in trainning state, we need to save train_seen_args to file
+    tmp_train_seen_args = {}
     if len(train_seen_args) == 0:
         print('Training... train_seen_args is empty, skip !')
     else:
         for pname in train_seen_args:
-            train_seen_args[pname] = list(train_seen_args[pname])
+            new_pname = re.sub(r"[^a-zA-Z0-9]", "", pname)
+            tmp_train_seen_args[new_pname] = list(train_seen_args[pname])
+            if new_pname != pname:
+                print(f'Warning: process name diff {new_pname} {pname}')
+
+        for pname in tmp_train_seen_args:
+            train_seen_files[pname] = set()
+            train_seen_pre_dir[pname] = set()
+            for fpath in tmp_train_seen_args[pname]:
+                tmp = fpath.split('/')
+                train_seen_files[pname].add(tmp[-1])
+                if len(tmp) > 3:
+                    if tmp[1] not in ['etc']:
+                        last_x = fpath.rfind('/')
+                        train_seen_pre_dir[pname].add(fpath[:last_x])
+
+            train_seen_files[pname] = list(train_seen_files[pname])
+            train_seen_pre_dir[pname] = list(train_seen_pre_dir[pname])
+
+        with open(os.path.join(os.path.join(DATAOUT_DIR, scenario_name, 'All_Seen_Files.json')), 'w') as f:
+            json.dump(train_seen_files, f, indent=4, ensure_ascii=True, sort_keys=False)
+
+        with open(os.path.join(os.path.join(DATAOUT_DIR, scenario_name, 'All_Seen_Pre_Files.json')), 'w') as f:
+            json.dump(train_seen_pre_dir, f, indent=4, ensure_ascii=True, sort_keys=False)
 
         with open(os.path.join(os.path.join(DATAOUT_DIR, scenario_name, 'All_Seen_Args.json')), 'w') as f:
-            json.dump(train_seen_args, f, indent=4, ensure_ascii=True, sort_keys=False)
+            json.dump(tmp_train_seen_args, f, indent=4, ensure_ascii=True, sort_keys=False)
 
     # if it is in trainning state, we need to save train_scg to file
     if len(train_scg._graphs) == 0:
         print('Training... train_scg is empty, skip !')
+        tmp_train_scg_graphs = train_scg._graphs
+        tmp_train_scg_only_sc_graphs = train_scg_only_sc._graphs
     else:
+        fit_scg(train_scg)
+        tmp_train_scg_graphs = {}
         scg_dir = os.path.join(DATAOUT_DIR, scenario_name, 'SCG')
         for pname in train_scg._graphs:
+            new_pname = re.sub(r"[^a-zA-Z0-9]","",pname)
+            tmp_train_scg_graphs[new_pname] = train_scg._graphs[pname]
+            if new_pname != pname:
+                print(f'Change train_scg pname from {pname} to {new_pname}')
+
+        tmp_train_scg_only_sc_graphs = {}
+        for pname in train_scg_only_sc._graphs:
+            fit_scg(train_scg_only_sc)
+            new_pname = re.sub(r"[^a-zA-Z0-9]","",pname)
+            tmp_train_scg_only_sc_graphs[new_pname] = train_scg_only_sc._graphs[pname]
+            if new_pname != pname:
+                print(f'Change train_scg_only_sc pname from {pname} to {new_pname}')
+
+        for pname in tmp_train_scg_graphs:
             if not os.path.exists(scg_dir):
                 os.mkdir(scg_dir)
-            nx.write_graphml(train_scg._graphs[pname], os.path.join(scg_dir, pname + '.xml'), encoding='utf-8')
+            nx.write_graphml(tmp_train_scg_graphs[pname], os.path.join(scg_dir, pname + '.xml'), encoding='utf-8')
 
         only_sc_scg_dir = os.path.join(scg_dir, 'ONLY_SC_SCG')
         if not os.path.exists(only_sc_scg_dir):
             os.mkdir(only_sc_scg_dir)
 
-        for pname in train_scg_only_sc._graphs:
-            nx.write_graphml(train_scg_only_sc._graphs[pname], os.path.join(only_sc_scg_dir, pname + '.xml'),
+        for pname in tmp_train_scg_only_sc_graphs:
+            nx.write_graphml(tmp_train_scg_only_sc_graphs[pname], os.path.join(only_sc_scg_dir, pname + '.xml'),
                             encoding='utf-8')
 
     # if it is in trainning state, we need to save train_seen_only_sc to file
@@ -637,30 +794,31 @@ def save_training_data(training, train_sc_size_list, train_scg, train_scg_only_s
                   'w') as f:
             json.dump(train_sc_size_list, f, indent=4, ensure_ascii=True, sort_keys=False)
 
+    return tmp_train_scg_graphs, tmp_train_scg_only_sc_graphs, tmp_train_seen_args, train_seen_files, train_seen_pre_dir
+
 # def main_func(scenarios_pos_start:int, scenarios_pos_end:int):
 if __name__ == '__main__':
-
     # scenarios ordered by training data size asc
     SCENARIOS = [
-        "Bruteforce_CWE-307",
-        "CWE-89-SQL-injection",
-        "CVE-2012-2122",
-        "CVE-2017-7529",
-        "PHP_CWE-434",
-        "EPS_CWE-434",
-        "CVE-2014-0160",
-
-        "CVE-2018-3760",
-        "CVE-2019-5418",
-
-        # End
-        "CVE-2020-23839",
         "ZipSlip",
+        "CVE-2017-12635_6",
+
+        # Done
+        "EPS_CWE-434",
         "CVE-2020-9484",
-        "Juice-Shop",
+        "PHP_CWE-434",
+        "CVE-2020-23839",
+        "CVE-2019-5418",
+        "CVE-2014-0160",
+        "Bruteforce_CWE-307",
+        "CVE-2017-7529",
+        "CWE-89-SQL-injection",
+        "CVE-2018-3760",
+        "CVE-2012-2122",
         "CVE-2020-13942",
-        "CVE-2017-12635_6"
+        "Juice-Shop",
     ]
+
     # SCENARIO_RANGE = SCENARIOS[scenarios_pos_start:scenarios_pos_end]
     SCENARIO_RANGE = SCENARIOS[0:1]
 
@@ -670,7 +828,7 @@ if __name__ == '__main__':
         # 如果 GP_DATA_DIR 目录下不存在 scenario_name 目录
         # if GP_DATA_DIR path do not exist scenario_name dir
         if not os.path.exists(os.path.join(DATAOUT_DIR, scenario_name)):
-            print('scenario_path not exist, Create')
+            print('scenario_path not exist, Create it')
             os.mkdir(os.path.join(DATAOUT_DIR, scenario_name))
 
         # 保证训练完毕
@@ -702,6 +860,8 @@ if __name__ == '__main__':
         train_scg_only_sc = m_SystemCallGraph()
         # save training data , some syscall return size
         train_sc_size_list = [0] * len(SYSCALLS_ARGS_RET)
+        train_seen_files = {}
+        train_seen_pre_dir = {}
 
         for dict in data_type_list:
             print('Handle file type %s' % dict['type'])
@@ -709,16 +869,14 @@ if __name__ == '__main__':
             training = False
             if dict['type'] == TRAINING:
                 training = True
-                print('Trainning save all usi usa')
+                print('In Trainning State...')
 
             # 初始化变量
-            train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list = initial_var(scenario_name, training, train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list)
+            train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list, train_seen_files, train_seen_pre_dir = initial_var(scenario_name, training, train_seen_args, train_scg, train_scg_only_sc, train_seen_only_sc, train_sc_size_list, train_seen_files, train_seen_pre_dir)
 
             for recording in tqdm(dict['data'],
                                   f"Handle {dict['type']} DataSet".rjust(27),
                                   unit=" recording_train"):
-
-
 
                 pathlist = recording.path.split('\\')
                 if dict['type'] != TEST:
@@ -752,26 +910,43 @@ if __name__ == '__main__':
                     only_sc_usc_result = []
                     sc_size_result = []
 
-                    if len(sc_df) < 30:
+                    last_sc_freq_max = [0] * 8
+
+                    # 文件的行数
+                    if len(sc_df) < 10:
                         print('Too Short %d' % len(sc_df))
                         continue
+
                     # just handle close direction
+                    df_for_sc_in = sc_df[(sc_df.DIR == '>') & sc_df.syscall.isin(syscall_need_in_list)].copy()
                     sc_df = sc_df[sc_df['DIR'] == '<'].copy()
+                    # Remove special char from process name
+                    try:
+                        sc_df.loc[:, 'ProcessName'] = sc_df['ProcessName'].apply(lambda x: re.sub(r"[^a-zA-Z0-9]", "", x) if not pd.isna(x) else x)
+                    except:
+                        print('Except ProcessName')
+                        print(set(sc_df['ProcessName']))
+                        sys.exit(-1)
                     # get four data once
                     sc_df[['syscallInt', 'Ret', 'RetReal', 'Params']] = sc_df.apply(df_get_other_feature, args=(pnr,), axis=1, result_type='expand')
+                    if len(df_for_sc_in) > 0:
+                        df_for_sc_in.loc[:, 'ProcessName'] = df_for_sc_in['ProcessName'].apply(lambda x: re.sub(r"[^a-zA-Z0-9]", "", x) if not pd.isna(x) else x)
+                        df_for_sc_in[['seen_file']] = df_for_sc_in.apply(get_filepath, axis=1, result_type='expand')
 
                     start_time = sc_df.iloc[0]['time']
                     end_time = start_time + 1000000000
 
                     if training:
-                        train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args = get_training_data_feature(sc_df, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args)
+                        train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args = get_training_data_feature(sc_df, df_for_sc_in, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args)
+                    del df_for_sc_in
 
                     while sc_df.iloc[-1]['time'] > end_time:
                         # handle 1 S period data
                         df = sc_df[(sc_df['time'] >= start_time) & (sc_df['time'] < end_time)]
-                        # 如果序列长度小于 30， 跳过
-                        if len(df) < 30:
-                            start_time += 200000000
+
+                        # 如果序列长度为 0， 跳过
+                        if len(df) == 0:
+                            start_time = end_time
                             end_time = start_time + 1000000000
                             continue
 
@@ -786,29 +961,26 @@ if __name__ == '__main__':
                         # 4 bytes PID TID Feature
                         data.extend(cal_pid_tid_switch_frequency(df))
 
+                        # SC SIZE
+                        # get syscall size for each second
+                        sc_size = get_sc_size_by_df(df, exploit_start_time, sc_size_result)
+
                         if not training:
                             # if it is not trainning
-
-                            # SC SIZE
-                            # get syscall size for each second
-                            get_sc_size_by_df(df, exploit_start_time, sc_size_result)
-
                             # SCG
                             # we need to get scg for each second
                             scg_second = create_scg_for_second(df, scg_path)
-
-                            only_sc_scg = m_SystemCallGraph()
-                            df.apply(df_create_scgraph, args=(only_sc_scg, True), axis=1)
+                            only_sc_scg = create_only_sc_scg_for_second(df, scg_path)
 
                             # if it is not trainning state, we need to get seen args for each process
-                            uai = get_uai(df, train_seen_args, only_sc_scg, train_scg_only_sc,
+                            uai, distinct_syscalls_with_unseen_args = get_uai(df, train_seen_args, train_seen_files, train_seen_pre_dir, only_sc_scg, train_scg_only_sc,
                                                    exploit_start_time, usa_result, seenarg_path)
 
                             # USI
-                            get_usi(df.iloc[-1]['time'], scg_second, train_scg, exploit_start_time, usc_result,
+                            usi, sc_num, usi_degree = get_usi(df.iloc[-1]['time'], scg_second, train_scg, exploit_start_time, usc_result,
                                     seensc_path)
                             # only syscall
-                            usi = get_usi(df.iloc[-1]['time'], only_sc_scg, train_scg_only_sc, exploit_start_time,
+                            usi_only_sc, sc_num_only_sc, usi_degree_only_sc = get_usi(df.iloc[-1]['time'], only_sc_scg, train_scg_only_sc, exploit_start_time,
                                     only_sc_usc_edges_result,
                                     seensc_path)
                             # 只是对未见的系统调用进行统计，不包括未见的边
@@ -817,21 +989,37 @@ if __name__ == '__main__':
                             # append UAI for trainning data
                             uai = 0
                             usi = 0
+                            distinct_syscalls_with_unseen_args = 0
+                            sc_num = 0
+                            usi_degree = 0
+                            usi_degree_only_sc = 0
+                            usi_only_sc = 0
+                            sc_num_only_sc = 0
 
                         data.append(uai)
                         data.append(usi)
-                        # ret number
-                        data.append(len(df[df.Ret < 0]) / len(df))
+                        # ret < 0 number
+                        data.append(len(df[df.Ret < 0]))
                         # syscall freq max 8
-                        sc_freq_max = df.syscallInt.value_counts().index.tolist()[:8]
-                        data.extend(sc_freq_max)
+
+                        # sc_freq_max = df.syscallInt.value_counts().index.tolist()[:8]
+                        # len_tmp = len(sc_freq_max)
+                        # if len_tmp != 8:
+                        #     sc_freq_max.extend(last_sc_freq_max[len_tmp:])
+                        # 14 Bytes
+                        sc_size = np.nan_to_num(sc_size, nan=0)
+                        data.extend(sc_size)
+
+
                         # data 0 index
                         # data 1 time
                         # data [2:41] timedelta
                         # data [41:45] pid/tid
                         # data [45:47] uai usi
                         # data [47:48] return less 0 number
-                        # data [48:56] 8 bytes syscall max freq
+                        # data [48:62] 8 bytes syscall max freq
+                        # data [52] distinct_syscalls_with_unseen_args
+                        # data [53]
                         # index_start = 0
                         # index_time  = 1
                         # index_timedelta_start = 2
@@ -841,30 +1029,99 @@ if __name__ == '__main__':
                         # index_uai = 45
                         # index_usi = 46
                         # index_ret_total = 47
-                        # index_sc_max_start = 48
-                        # index_sc_max_end = 56
+                        # index_sc_size_start = 48
+                        # index_sc_size_end = 62
+                        # index_uai_sc = 62
+                        data.append(distinct_syscalls_with_unseen_args)
+                        # index_usi_only_sc = 63
+                        data.append(usi_only_sc)
+                        # index_usi_sc_num = 64
+                        data.append(sc_num)
+                        # index_usi_sc_num_only_sc = 65
+                        data.append(sc_num_only_sc)
+                        data.append(usi_degree)
+                        data.append(usi_degree_only_sc)
+
 
                         numpy_all.append(data)
                         index += 1
+                        if len(df) < 10:
+                            start_time = end_time
+                            end_time = start_time + 1000000000
+                        else:
+                            start_time += 300000000
+                            end_time = start_time + 1000000000
+                    # 处理不足一秒的
+                    df = sc_df[(sc_df['time'] >= start_time) & (sc_df['time'] < end_time)]
 
-                        start_time += 200000000
-                        end_time = start_time + 1000000000
+                    if len(df) > 0:
+                        last_time = str(df.iloc[-1]['time'])
+                        data = [index, last_time]
+                        second_seen_args = {}
+                        # save dataframe to file
+                        df.to_pickle(os.path.join(dataframe_path, str(df.iloc[-1]['time']) + '.pkl'))
+                        df_all[index] = df
+                        data.extend(cal_time_delte(df))
+                        data.extend(cal_pid_tid_switch_frequency(df))
+                        sc_size = get_sc_size_by_df(df, exploit_start_time, sc_size_result)
+                        if not training:
+                            scg_second = create_scg_for_second(df, scg_path)
+                            only_sc_scg = create_only_sc_scg_for_second(df, scg_path)
+                            uai, distinct_syscalls_with_unseen_args = get_uai(df, train_seen_args, train_seen_files, train_seen_pre_dir, only_sc_scg, train_scg_only_sc,
+                                          exploit_start_time, usa_result, seenarg_path)
+                            usi, sc_num, usi_degree = get_usi(df.iloc[-1]['time'], scg_second, train_scg, exploit_start_time, usc_result,
+                                    seensc_path)
+                            usi_only_sc, sc_num_only_sc, usi_degree_only_sc = get_usi(df.iloc[-1]['time'], only_sc_scg, train_scg_only_sc, exploit_start_time,
+                                          only_sc_usc_edges_result,
+                                          seensc_path)
+                            # 只是对未见的系统调用进行统计，不包括未见的边
+                            only_sc_get_usi(df, train_seen_only_sc, only_sc_scg, exploit_start_time, only_sc_usc_result)
+                        else:
+                            # append UAI for trainning data
+                            uai = 0
+                            usi = 0
+                            distinct_syscalls_with_unseen_args = 0
+                            sc_num = 0
+                            usi_degree = 0
+                            usi_degree_only_sc = 0
+                            usi_only_sc = 0
+                            sc_num_only_sc = 0
+
+                        data.append(uai)
+                        data.append(usi)
+                        # ret number
+                        data.append(len(df[df.Ret < 0]))
+                        # syscall freq max 8
+                        index += 1
+                        # set nan to 0
+                        sc_size = np.nan_to_num(sc_size, nan=0)
+                        data.extend(sc_size)
+                        data.append(distinct_syscalls_with_unseen_args)
+                        data.append(usi_only_sc)
+                        data.append(sc_num)
+                        data.append(sc_num_only_sc)
+                        data.append(usi_degree)
+                        data.append(usi_degree_only_sc)
+
+                        numpy_all.append(data)
 
                 save_second_data(recoding_path, numpy_all, df_all, seenarg_path, usa_result, seensc_path, usc_result, only_sc_usc_edges_result, only_sc_usc_result, scsize_path, sc_size_result)
 
-            save_training_data(training, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args, scenario_name)
+            train_scg._graphs, train_scg_only_sc._graphs, train_seen_args, train_seen_files, train_seen_pre_dir = save_training_data(training, train_sc_size_list, train_scg, train_scg_only_sc, train_seen_only_sc, train_seen_args, train_seen_files, train_seen_pre_dir, scenario_name)
+
     # scenario END
     print('End')
-#
+
 # if __name__ == '__main__':
 #     process_list = []
 #
-#     for i in range(7):
+#     for i in range(2):
 #         p = Process(target=main_func, args=(i, i+1))
 #         p.start()
 #         process_list.append(p)
 #
 #     for i in process_list:
 #         p.join()
+#         print(f'{i} exit')
 #
 #     print('ALL Create DataSet exit')

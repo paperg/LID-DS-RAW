@@ -170,29 +170,39 @@ class IDS:
 
             if model._use_usc:
                 columns.extend(['UnseenSC'])
+            if model._use_ret:
+                columns.extend(['Return'])
 
             if model._use_freq:
                 columns.extend(['Freq'])
 
-            df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim)])
-            nor_df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim)])
+            if model._use_sc_max_params:
+                columns.extend(['SC Max Size ' + str(i) for i in range(12)])
+
+            df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim * 2)])
+            nor_df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim * 2)])
 
             for data_tuple in recording.df_and_np():
                 if model.get_input_result(data_tuple):
-                    is_anomaly, timestaps, result_data, result_bools = self._final_bb.get_batch_result()
+                    is_anomaly, model_inputs, timestaps, result_data, result_bools = self._final_bb.get_batch_result()
+                    model.test_batch_finish()
                     for index, cur_time in enumerate(timestaps):
                         need_hanle, current_exploit_time = self.performance.analyze_batchs(cur_time, is_anomaly[index])
-                        if need_hanle:
-                            new_row = np.array([current_exploit_time, cur_time])
-                            new_row = np.append(new_row, result_bools[index])
-                            new_row = np.append(new_row, result_data[index])
-                            df.loc[len(df.index)] = new_row
-                            # print(result_data[i])
-                        elif current_exploit_time is not None:
-                            new_row = np.array([current_exploit_time, cur_time])
-                            new_row = np.append(new_row, result_bools[index])
-                            new_row = np.append(new_row, result_data[index])
-                            nor_df.loc[len(nor_df.index)] = new_row
+                        if False:
+                            if need_hanle:
+                                new_row = np.array([current_exploit_time, cur_time])
+                                new_row = np.append(new_row, result_bools[index])
+                                new_row = np.append(new_row, model_inputs[index])
+                                new_row = np.append(new_row, result_data[index])
+                                df.loc[len(df.index)] = new_row
+                                # print(result_data[i])
+                            elif current_exploit_time is not None:
+                                if self.performance._alarm is False:
+                                    new_row = np.array([current_exploit_time, cur_time])
+                                    new_row = np.append(new_row, result_bools[index])
+                                    new_row = np.append(new_row, model_inputs[index])
+                                    new_row = np.append(new_row, result_data[index])
+                                    nor_df.loc[len(nor_df.index)] = new_row
 
                     if self.plot is not None:
                         self.plot.add_to_plot_data(anomaly_score,

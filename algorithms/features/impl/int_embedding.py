@@ -52,6 +52,7 @@ class IntEmbedding(BuildingBlock):
 
         bb_value = self._dependency_list[0].get_result(syscall)
         if bb_value not in self._syscall_dict:
+            # index start from 1
             self._syscall_dict[bb_value] = len(self._syscall_dict) + 1
 
     def fit(self):
@@ -72,6 +73,8 @@ class IntEmbedding(BuildingBlock):
         except KeyError:
             sys_to_int = len(self._syscall_dict) + 1
             print('KeeyError %s %d' % (bb_value, sys_to_int))
+            self._syscall_dict[bb_value] = sys_to_int
+
         return sys_to_int
 
     def _calculate(self, bb_value: str):
@@ -82,6 +85,8 @@ class IntEmbedding(BuildingBlock):
             sys_to_int = self._syscall_dict[bb_value]
         except KeyError:
             sys_to_int = len(self._syscall_dict) + 1
+            self._syscall_dict[bb_value] = sys_to_int
+            # print('Key Error %s %d' % (bb_value, sys_to_int))
         return sys_to_int
 
 class IntEmbeddingConcat(BuildingBlock):

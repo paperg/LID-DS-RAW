@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn import TransformerEncoder, LayerNorm
 from torch.nn import TransformerDecoder
 from torch.autograd import Variable
-
+from algorithms.decision_engines.nn.transformer import CustomTransformer
 from tqdm import tqdm
 
 from algorithms.building_block import BuildingBlock
@@ -19,6 +19,9 @@ from dataloader.syscall import Syscall
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 # from sklearn.metrics import mean_squared_error
+# import visdom
+#
+# viz = visdom.Visdom(env='GP_IDS')
 
 DATA_USED_BY_MODEL_DIR = 'data_used_by_model'
 
@@ -83,7 +86,8 @@ class TransformerEncoderLayer(nn.Module):
     def forward(self, src, src_mask=None, src_key_padding_mask=None, is_causal=False):
         src2 = self.self_attn(src, src, src)[0]
         src = src + self.dropout1(src2)
-        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        # src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        src2 = self.linear2(self.activation(self.linear1(src)))
         src = src + self.dropout2(src2)
         return src
 
@@ -113,108 +117,128 @@ class TransformerDecoderLayer(nn.Module):
         return tgt
 
 
-class TranAD(nn.Module):
-    def __init__(self, feats, lr=0.001, dropout=0.2, hid_times=4, nhead = 1, use_ae2=True):
-        super(TranAD, self).__init__()
-        self.name = 'TranAD'
+class TransformerModel(nn.Module):
+    def __init__(
+            self,
+            dim_model,
+            num_heads,
+            num_encoder_layers,
+            num_decoder_layers,
+            dropout,
+            feedforward_dim,
+            pre_layer_norm):
+        super().__init__()
+
+        # INFO
+        self.model_type = "Transformer"
+        self.dim_model = dim_model
+
+        self.transformer = CustomTransformer(
+            d_model=dim_model,
+            nhead=num_heads,
+            num_encoder_layers=num_encoder_layers,
+            num_decoder_layers=num_decoder_layers,
+            dropout=dropout,
+            dim_feedforward=feedforward_dim,
+            pre_layer_norm=pre_layer_norm,
+        )
+
+        self.out = nn.Linear(dim_model, dim_model)
+
+    def forward(self, src, tgt, tgt_mask=None, src_pad_mask=None, tgt_pad_mask=None):
+        # We could use the parameter batch_first=True, but our KDL version doesn't support it yet, so we permute
+        # to obtain size (sequence length, batch_size, dim_model),
+        src = src.permute(1, 0, 2)
+        tgt = tgt.permute(1, 0, 2)
+
+        # Transformer blocks - Out size = (sequence length, batch_size, num_tokens)
+        transformer_out = self.transformer(
+            src,
+            tgt,
+            tgt_mask=tgt_mask,
+            src_key_padding_mask=src_pad_mask,
+            tgt_key_padding_mask=tgt_pad_mask
+        )
+        out = self.out(transformer_out)
+
+        return out
+
+
+class Mine_AD(nn.Module):
+    def __init__(self, feats, lr=0.001, dropout=0.2, hid_times=2, nhead = 1, use_ae2=True):
+        super(Mine_AD, self).__init__()
+        self.name = 'Mine_Test_AD'
         self._use_ae2 = use_ae2
         self._hid_times = hid_times
         self.lr = lr
-
         self.n_feats = feats
         self._dropout = dropout
 
-        # self.pos_encoder = PositionalEncoding(feats, 0.1, 1024)
-        # encoder_layers1 = TransformerEncoderLayer(d_model=feats * 2, nhead=9, dim_feedforward=feats * 2, dropout=0.1)
-        # self.transformer_encoder1 = TransformerEncoder(encoder_layers1, 1)
+        encoder_layers = TransformerEncoderLayer(d_model=feats*2, nhead=nhead, dim_feedforward=feats, dropout=0.1)
 
-        encoder_layers2 = TransformerEncoderLayer(d_model=feats * 2, nhead=nhead, dim_feedforward=feats * 2, dropout=0.1)
-        self.transformer_encoder2 = TransformerEncoder(encoder_layers2, 1)
-        # decoder_layers1 = TransformerDecoderLayer(d_model=feats, nhead=feats, dim_feedforward=16, dropout=0.1)
-        # self.transformer_decoder1 = TransformerDecoder(decoder_layers1, 1)
-        # decoder_layers2 = TransformerDecoderLayer(d_model=feats, nhead=feats, dim_feedforward=16, dropout=0.1)
-        # self.transformer_decoder2 = TransformerDecoder(decoder_layers2, 1)
-        # self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+        self.multihead_attn = TransformerEncoder(encoder_layers, 1)
 
         self.encoder1 = torch.nn.Sequential(
 
-            torch.nn.Linear(feats * 2, feats * hid_times * 2),
+            torch.nn.Linear(feats * 2, feats * 2 // hid_times),
+            # torch.nn.Linear(feats, feats // hid_times),
             torch.nn.Dropout(p=self._dropout),
-            torch.nn.SELU(),
-            # torch.nn.Sigmoid(),
-            # torch.nn.Tanh(),
-
-            torch.nn.Linear(feats * hid_times * 2, feats * hid_times * 4),
-            torch.nn.Dropout(p=self._dropout),
-            # torch.nn.Tanh(),
             torch.nn.SELU(),
             # torch.nn.Sigmoid(),
 
-            torch.nn.Linear(feats * hid_times * 4, feats * hid_times * 8),
+            torch.nn.Linear(feats * 2 // hid_times, feats * 2 // hid_times // 2),
+            # torch.nn.Linear(feats // hid_times, feats // hid_times // 2),
             torch.nn.Dropout(p=self._dropout),
-            torch.nn.SELU(),
-            # torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
+            torch.nn.SELU(),
+
+            torch.nn.Linear(feats * 2 // hid_times // 2, feats * 2 // hid_times // 4),
+            # torch.nn.Linear(feats // hid_times // 2, feats // hid_times // 4),
+            torch.nn.Dropout(p=self._dropout),
+            # torch.nn.Sigmoid(),
+            torch.nn.SELU(),
         )
 
         self.decoder1 = torch.nn.Sequential(
-            torch.nn.Linear(feats * hid_times * 8, feats * hid_times * 4),
+            torch.nn.Linear(feats * 2 // hid_times // 4, feats * 2 // hid_times // 2),
+            # torch.nn.Linear(feats // hid_times // 4, feats // hid_times // 2),
             torch.nn.Dropout(p=self._dropout),
+            # # torch.nn.Sigmoid(),
             torch.nn.SELU(),
-            # torch.nn.Sigmoid(),
 
-            torch.nn.Linear(feats * hid_times * 4, feats * hid_times),
-            torch.nn.Dropout(p=self._dropout),
-            torch.nn.SELU(),
-            # torch.nn.Tanh(),
-            # torch.nn.SELU(),
-            # torch.nn.Sigmoid(),
-
-            torch.nn.Linear(feats * hid_times, feats),
-            torch.nn.Dropout(p=self._dropout),
-            # torch.nn.Tanh(),
-            torch.nn.SELU(),
-            # torch.nn.Sigmoid(),
-        )
-
-        self.encoder2 = torch.nn.Sequential(
-            torch.nn.Linear(feats * 2, feats * hid_times),
-            torch.nn.Dropout(p=self._dropout),
-            # torch.nn.SELU(),
-            torch.nn.Tanh(),
-            # torch.nn.Sigmoid(),
-
-            torch.nn.Linear(feats * hid_times, feats * 2 * hid_times),
-            torch.nn.Dropout(p=self._dropout),
-            torch.nn.SELU(),
-            # torch.nn.Tanh(),
-            # torch.nn.Sigmoid(),
-
-            # torch.nn.Linear(feats * 2 * hid_times * 2, feats * 2 * hid_times * 4),
+            # torch.nn.Linear(feats * 2 // hid_times // 2, feats * 2 // hid_times // 2),
+            # # torch.nn.Linear(feats // hid_times // 2, feats // hid_times),
             # torch.nn.Dropout(p=self._dropout),
             # torch.nn.SELU(),
+            # torch.nn.Sigmoid(),
+
+            # torch.nn.Linear(feats // hid_times // 2, feats),
+            torch.nn.Linear(feats * 2 // hid_times // 2, feats),
+            torch.nn.Dropout(p=self._dropout),
+            # torch.nn.SELU(),
+            torch.nn.SELU(),
         )
 
         # Building an decoder
         self.decoder2 = torch.nn.Sequential(
 
-            torch.nn.Linear(feats * hid_times * 8, feats * hid_times * 4),
+            torch.nn.Linear(feats * 2 // hid_times // 4, feats * 2 // hid_times // 2),
+            # torch.nn.Linear(feats * 3, feats * 2 // hid_times),
             torch.nn.Dropout(p=self._dropout),
             torch.nn.SELU(),
-            # torch.nn.Tanh(),
             # torch.nn.Sigmoid(),
 
-            torch.nn.Linear(feats * hid_times * 4, feats * hid_times),
+            # torch.nn.Linear(feats * 2 // hid_times // 2, feats * 2 // hid_times),
+            # torch.nn.Linear(feats * 2 // hid_times, feats * 2 // hid_times // 2),
+            # torch.nn.Dropout(p=self._dropout),
+            # torch.nn.SELU(),
+            # torch.nn.Sigmoid(),
+
+            torch.nn.Linear(feats * 2 // hid_times // 2, feats),
+            # torch.nn.Linear(feats // hid_times, feats // 2),
             torch.nn.Dropout(p=self._dropout),
+            # torch.nn.SELU(),
             torch.nn.SELU(),
-            # torch.nn.Tanh(),
-            # torch.nn.Sigmoid(),
-
-            torch.nn.Linear(feats * hid_times, feats),
-            torch.nn.Dropout(p=self._dropout),
-            torch.nn.SELU()
-            # torch.nn.Tanh(),
-            # torch.nn.Sigmoid(),
         )
 
         self.norm = LayerNorm(feats * 2)
@@ -225,11 +249,6 @@ class TranAD(nn.Module):
                 nn.init.normal_(m.weight, 0, math.sqrt(1. / fan_in))
 
         for m in self.decoder1:
-            if isinstance(m, nn.Linear):
-                fan_in = m.in_features
-                nn.init.normal_(m.weight, 0, math.sqrt(1. / fan_in))
-
-        for m in self.encoder2:
             if isinstance(m, nn.Linear):
                 fan_in = m.in_features
                 nn.init.normal_(m.weight, 0, math.sqrt(1. / fan_in))
@@ -246,42 +265,27 @@ class TranAD(nn.Module):
                 param = param * (desired / (eps + norm))
 
     def forward(self, src):
-        # src: (S, N, E)(S, N, E).
-        # 其中S是源序列长度，T是目标序列长度，N是批处理大小，E是特征编号
 
-        # encoder1 = self.encoder1(src)
-        # reconstruct1 = self.decoder1(encoder1)
-        # rec_loss1 = (reconstruct1 - src) ** 2
-        # if self._use_ae2:
-        #     ed2_inputs = torch.cat([src, rec_loss1], axis=2)
-        #     encoder2 = self.transformer_encoder2(ed2_inputs)
-        #     reconstruct2 = self.decoder2(encoder2)
-        # else:
-        #     reconstruct2 = None
-        # self.max_norm()
-
-
-        # ed2_inputs = torch.cat([src, last_loss], axis=2)
-        # encoder1 = self.transformer_encoder1(ed2_inputs)
-
-        # 先使用正常输入与重构误差 全 0 进行重构，得到重构误差 rec_loss
         rec_loss = torch.zeros_like(src)
         modle_input = torch.cat((src, rec_loss), dim=2)
-        # modle_input = self.norm(modle_input)
-        ae_input = self.transformer_encoder2(modle_input)
+        ae_input = self.multihead_attn(modle_input)
+        # ae_input = src
         encoder1 = self.encoder1(ae_input)
         reconstruct1 = self.decoder1(encoder1)
+        # rec_loss1 = 0
         rec_loss1 = (reconstruct1 - src) ** 2
 
         # 重构误差 rec_loss 不为零了 ，再传入模型，得到的误差可能会放大差异
         modle_input = torch.cat((src, rec_loss1), dim=2)
-        ae_input = self.transformer_encoder2(modle_input)
+        ae_input = self.multihead_attn(modle_input)
+        # ae_input = modle_input
         encoder2 = self.encoder1(ae_input)
         reconstruct2 = self.decoder2(encoder2)
 
-        self.max_norm()
 
+        self.max_norm()
         return reconstruct1, reconstruct2, rec_loss1
+
 
 class Transformer_ad(BuildingBlock):
     def __init__(self,
@@ -323,6 +327,8 @@ class Transformer_ad(BuildingBlock):
         self._use_sc_max_params = use_dict['use_sc_max_params']
         self._use_ret = use_dict['use_ret']
         self._use_ae2 = use_dict['mode_use_ae2']
+        self.use_transformer = use_dict['use_transformer']
+        self._module_is_mine = True
         self.zscore_nor = StandardScaler()
         model_dir = os.path.split(model_path)[0]
         if not os.path.exists(model_dir):
@@ -355,7 +361,18 @@ class Transformer_ad(BuildingBlock):
         self._batch_counter_test = 0
 
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.Net = TranAD(self._input_dim, lr=0.001, dropout=self._dropout, nhead = self._num_head, use_ae2 = self._use_ae2)
+        if self.use_transformer:
+            self.Net = TransformerModel(self._input_dim,
+                                            num_heads=self._num_head,
+                                            num_encoder_layers=4,
+                                            num_decoder_layers=4,
+                                            dropout=self._dropout,
+                                            feedforward_dim=self._input_dim*4,
+                                            pre_layer_norm=True)
+        else:
+            self.Net = Mine_AD(self._input_dim, lr=0.001, dropout=self._dropout, nhead=self._num_head,
+                               use_ae2=self._use_ae2)
+
         self.Net.to(self._device)
         # self._last_loss = torch.zeros(1, 16, self._input_dim).to(self._device)
         # self._cal_last_loss = torch.zeros(1, 1, self._input_dim).to(self._device)
@@ -551,23 +568,29 @@ class Transformer_ad(BuildingBlock):
             inputs = Variable(torch.Tensor(self._test_data['x'])).to(self._device)
             local_bs = inputs.shape[0]
             inputs = inputs.view(local_bs, -1, self._input_dim)
-            window = inputs.permute(1, 0, 2)
-            # if self._use_ae2:
-            #     reconstruct, rec2_input, reconstruct_resc = self.Net(window)
-            #     val_loss = self._calloss(rec2_input, reconstruct_resc)
-            # else:
-            #     # No AE 2
-            #     reconstruct, rec2_input, _ =  self.Net(window)
-            #     val_loss = self._calloss(reconstruct, window)
 
-            reconstruct1, reconstruct2, rec_loss1 = self.Net(window)
-            loss = self._calloss(window,reconstruct2)
+            if self.use_transformer:
+                reconstruct = self.Net(inputs)
+                loss = self._calloss(inputs, reconstruct)
+                return loss
+            else:
+                window = inputs.permute(1, 0, 2)
+                # if self._use_ae2:
+                #     reconstruct, rec2_input, reconstruct_resc = self.Net(window)
+                #     val_loss = self._calloss(rec2_input, reconstruct_resc)
+                # else:
+                #     # No AE 2
+                #     reconstruct, rec2_input, _ =  self.Net(window)
+                #     val_loss = self._calloss(reconstruct, window)
 
-            rec_loss1 = rec_loss1.view(-1, self._input_dim)
-            test_loss = torch.mean(loss, dim=0)
-
-            return test_loss.cpu().detach().numpy(), rec_loss1.cpu().detach().numpy(), self._test_data['x'], self._test_data['y']
+                reconstruct1, reconstruct2, rec_loss1 = self.Net(window)
+                loss = self._calloss(window,reconstruct2)
+                rec_loss1 = rec_loss1.view(-1, self._input_dim)
+                test_loss = torch.mean(loss, dim=0)
+                return test_loss.cpu().detach().numpy(), rec_loss1.cpu().detach().numpy(), self._test_data['x'], self._test_data['y']
+                # return test_loss.cpu().detach().numpy(), 0, self._test_data['x'], self._test_data['y']
         else:
+
             return None, None
 
     def data_Normalization(self, data, is_train=False):
@@ -649,6 +672,7 @@ class Transformer_ad(BuildingBlock):
         define hyperparameters, iterate through DataSet and train Net
         keep hidden and cell state over batches, only reset with new recording
         """
+        # viz.line([0.], [0.], win='train_loss',  opts={'showlegend':True, 'xlabel':"epoch",'ylabel':"loss"},)
         self._save_dataset_to_file()
         if self._state == 'build_training_data':
             self._state = 'fitting'
@@ -669,19 +693,23 @@ class Transformer_ad(BuildingBlock):
                 n = epoch + 1
                 self.Net.train()
                 for i, inputs in enumerate(train_dataloader, 0):
-                    for j in range(0, 1):
-                        # tmp_inputs = inputs + (time_mat_tentor[self.gp_pos] * j)
+                    # tmp_inputs = inputs + (time_mat_tentor[self.gp_pos] * j)
+                    if self.use_transformer:
+                        reconstruct = self.Net(inputs)
+                        train_loss = self._loss(inputs, reconstruct)
+                    else:
                         tmp_inputs = inputs
                         local_bs = tmp_inputs.shape[0]
                         tmp_inputs = tmp_inputs.view(local_bs, -1, self._input_dim)
                         window = tmp_inputs.permute(1, 0, 2)
-                        reconstruct1, reconstruct2, rec_loss1= self.Net(window)
+                        reconstruct1, reconstruct2, rec_loss1 = self.Net(window)
                         train_loss = (1 / n) * self._loss(window, reconstruct1) + (1 - 1 / n) * self._loss(window,  reconstruct2)
-                        optimizer.zero_grad()
-                        # calculates the loss of the loss function
-                        train_loss.backward()
-                        # improve from loss, i.e backpro, val_loss: %1.5fp
-                        optimizer.step()
+                        # train_loss = self._loss(window, reconstruct1)
+                    optimizer.zero_grad()
+                    # calculates the loss of the loss function
+                    train_loss.backward()
+                    # improve from loss, i.e backpro, val_loss: %1.5fp
+                    optimizer.step()
                 scheduler.step()
 
                 # reset hidden state
@@ -692,19 +720,17 @@ class Transformer_ad(BuildingBlock):
                     # inputs, labels = data
                     local_bs = inputs.shape[0]
                     inputs = inputs.view(local_bs, -1, self._input_dim)
-                    window = inputs.permute(1, 0, 2)
-                    # if self._use_ae2:
-                    #     reconstruct, rec2_input, reconstruct_resc = self.Net(window)
-                    # else:
-                    #     reconstruct, rec2_input, _= self.Net(window)
-
-                    reconstruct1, reconstruct2, rec_loss1= self.Net(window)
-                    train_loss = (1 / n) * self._loss(window, reconstruct1) + (1 - 1 / n) * self._loss(window, reconstruct2)
-                    val_loss = self._loss(window, reconstruct2)
-
-                    # val_loss = self._loss(window, reconstruct)
+                    if self.use_transformer:
+                        reconstruct = self.Net(inputs)
+                        val_loss = self._loss(inputs, reconstruct)
+                    else:
+                        window = inputs.permute(1, 0, 2)
+                        reconstruct1, reconstruct2, rec_loss1= self.Net(window)
+                        val_loss = self._loss(window, reconstruct2)
 
                 print(f"Epoch: {epoch}, L1 {train_loss} val_loss: {val_loss}")
+                # viz.line(X=torch.FloatTensor([epoch]), Y=torch.FloatTensor([train_loss]), win='train_loss', name="训练损失", update='append')
+                # viz.line(Y=torch.FloatTensor([val_loss]), X=torch.FloatTensor([epoch]), win='val_loss', update='append',opts={'xlabel':"epoch",'ylabel':"loss"},)
 
         else:
             print(f"Net already trained. Using model {self._model_path}")

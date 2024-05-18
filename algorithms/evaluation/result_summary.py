@@ -34,6 +34,12 @@ MODEL_NAME = [
     "Mine_No_threshold",
     "Mine_CHBS_Model",
     "Mine_CHBS_threshold",
+    "CHBS_Data_Mine_Model",
+    # "Mine_no_transformer",
+    'Mine_AE_hideen_2',
+    'Mine_test_no_trasnformer',
+    'Mine_test',
+    'Mine_test_AE'
 ]
 
 DISPLAY_FILED = [

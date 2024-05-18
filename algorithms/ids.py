@@ -38,12 +38,14 @@ class IDS:
         if not self._final_bb.is_decider():
             raise ValueError('Resulting BuildingBlock is not a decider!')
         self._data_preprocessor = GP_DataPreprocessor(self._data_loader, resulting_building_block)
+        # self._data_preprocessor = DataPreprocessor(self._data_loader, resulting_building_block)
         self.threshold = 0.0
         self._alarm = False
         self._anomaly_scores_exploits = []
         self._anomaly_scores_no_exploits = []
         self._first_syscall_after_exploit_list = []
         self._last_syscall_of_recording_list = []
+        self.web_dic = {}
         self._create_alarms = create_alarms
         self.performance = Performance(create_alarms)
         if plot_switch is True:
@@ -153,6 +155,7 @@ class IDS:
         data = self._data_loader.test_data()
         description = 'anomaly detection'.rjust(27)
         analyze_dir = 'K:\\hids\\dataAnalyze'
+
         for recording in tqdm(data, description, unit=" recording"):
             self.performance.new_recording(recording)
             if self.plot is not None:
@@ -181,6 +184,8 @@ class IDS:
 
             df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim * 2)])
             nor_df = pd.DataFrame(columns = columns + [i for i in range(model._input_dim * 2)])
+            # type 0 : 正常  1 异常 2 入侵时刻
+            web_df = pd.DataFrame(columns=['time', 'type'])
 
             for data_tuple in recording.df_and_np():
                 if model.get_input_result(data_tuple):
@@ -188,29 +193,33 @@ class IDS:
                     model.test_batch_finish()
                     for index, cur_time in enumerate(timestaps):
                         need_hanle, current_exploit_time = self.performance.analyze_batchs(cur_time, is_anomaly[index])
-                        if False:
-                            if need_hanle:
-                                new_row = np.array([current_exploit_time, cur_time])
-                                new_row = np.append(new_row, result_bools[index])
-                                new_row = np.append(new_row, model_inputs[index])
-                                new_row = np.append(new_row, result_data[index])
-                                df.loc[len(df.index)] = new_row
-                                # print(result_data[i])
-                            elif current_exploit_time is not None:
-                                if self.performance._alarm is False:
-                                    new_row = np.array([current_exploit_time, cur_time])
-                                    new_row = np.append(new_row, result_bools[index])
-                                    new_row = np.append(new_row, model_inputs[index])
-                                    new_row = np.append(new_row, result_data[index])
-                                    nor_df.loc[len(nor_df.index)] = new_row
+                        new_row = np.array([cur_time, int(is_anomaly[index])])
+                        web_df.loc[len(web_df)] = new_row
+                        # if model._module_is_mine:
+                        #     if current_exploit_time:
+                        #         if need_hanle:
+                        #             new_row = np.array([current_exploit_time, cur_time])
+                        #             new_row = np.append(new_row, result_bools[index])
+                        #             new_row = np.append(new_row, model_inputs[index])
+                        #             new_row = np.append(new_row, result_data[index])
+                        #             df.loc[len(df.index)] = new_row
+                        #             # print(result_data[i])
+                        #         elif current_exploit_time is not None:
+                        #             if self.performance._alarm is False:
+                        #                 new_row = np.array([current_exploit_time, cur_time])
+                        #                 new_row = np.append(new_row, result_bools[index])
+                        #                 new_row = np.append(new_row, model_inputs[index])
+                        #                 new_row = np.append(new_row, result_data[index])
+                        #                 nor_df.loc[len(nor_df.index)] = new_row
 
-                    if self.plot is not None:
-                        self.plot.add_to_plot_data(anomaly_score,
-                                                   syscall,
-                                                   self.performance.get_cfp_indices())
             if current_exploit_time is not None:
+                new_row = np.array([current_exploit_time, 3])
+                web_df.loc[len(web_df)] = new_row
                 if self.performance._alarm is False:
                     print(f'File {recording.name} Not recorgnize')
+
+            web_df = web_df.sort_values(by='time')
+            self.web_dic[recording.name] = web_df
 
             self._data_preprocessor.new_recording()
             if len(df) > 0:

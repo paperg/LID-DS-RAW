@@ -4,9 +4,9 @@ from dataloader.base_recording import BaseRecording
 from dataloader.syscall import Syscall
 
 # adjusting plot parameters
-plt.rcParams.update({"font.size": 26,
-                     "figure.figsize": (55, 40),
-                     "agg.path.chunksize": 10000})
+# plt.rcParams.update({"font.size": 26,
+#                      "figure.figsize": (55, 40),
+#                      "agg.path.chunksize": 10000})
 
 
 class ScorePlot:

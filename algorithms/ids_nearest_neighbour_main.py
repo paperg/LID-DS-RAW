@@ -15,48 +15,56 @@ from algorithms.ids import IDS
 from algorithms.features.impl.int_embedding import IntEmbedding
 from algorithms.features.impl.syscall_name import SyscallName
 from algorithms.features.impl.ngram import Ngram
-
+from dataloader.dataset_create_gp import DATAOUT_DIR, work_dir
 
 
 
 if __name__ == '__main__':
 
-    # getting the LID-DS base path from argument or environment variable
-    if len(sys.argv) > 1:
-        LID_DS_BASE_PATH = sys.argv[1]
-    else:
-        try:
-            LID_DS_BASE_PATH = os.environ['LID_DS_BASE']
-        except KeyError as exc:
-            raise ValueError("No LID-DS Base Path given."
-                             "Please specify as argument or set Environment Variable "
-                             "$LID_DS_BASE") from exc
+    SCENARIOS = [
+        "CWE-89-SQL-injection",
+        "CVE-2017-7529",
+        "CVE-2014-0160",
+        "CVE-2012-2122",
+        "Bruteforce_CWE-307",
+        "CVE-2020-23839",
 
-    LID_DS_VERSION = "LID-DS-2019"
-    SCENARIO_NAME = "CVE-2017-7529"
+        "PHP_CWE-434",
+        "ZipSlip",
+        "CVE-2018-3760",
+        "CVE-2020-9484",
+        "EPS_CWE-434",
+        "CVE-2019-5418",
+        "Juice-Shop",
+        "CVE-2020-13942",
+        "CVE-2017-12635_6"
+    ]
+    SCENARIO_RANGE = SCENARIOS[0:1]
 
 
-    scenario_path = f"{LID_DS_BASE_PATH}/{LID_DS_VERSION}/{SCENARIO_NAME}"
-    dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)
+    for scenario_name in SCENARIO_RANGE:
+        scenario_path = os.path.join(work_dir,
+                                     scenario_name)
+        dataloader = dataloader_factory(scenario_path, direction=Direction.BOTH)
 
 
-    THREAD_AWARE = True
-    WINDOW_LENGTH = 1000
-    NGRAM_LENGTH = 5
+        THREAD_AWARE = True
+        WINDOW_LENGTH = 1000
+        NGRAM_LENGTH = 5
 
-    ### building blocks
-    syscall_name = SyscallName()
-    int_embedding = IntEmbedding(syscall_name)
-    ngram = Ngram([int_embedding], True, 5)
-    nn = NearestNeighbour(ngram)
+        ### building blocks
+        syscall_name = SyscallName()
+        int_embedding = IntEmbedding(syscall_name, scenario_name=scenario_name)
+        ngram = Ngram([int_embedding], True, 5)
+        nn = NearestNeighbour(ngram)
 
-    ids = IDS(data_loader=dataloader,
-              resulting_building_block=nn,
-              create_alarms=True,
-              plot_switch=False)
+        ids = IDS(data_loader=dataloader,
+                  resulting_building_block=nn,
+                  create_alarms=True,
+                  plot_switch=False)
 
-    print("at evaluation:")
+        print("at evaluation:")
 
-    results = ids.detect().get_results()
-    pprint(results)
+        results = ids.detect().get_results()
+        pprint(results)
 

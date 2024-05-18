@@ -137,7 +137,7 @@ class Performance:
                 # 预测是异常，异常为阳，非异常为阴
                 if self._current_exploit_time > syscall_time:
                     # 实际没有异常， 假阳
-                    need_display = True
+                    # need_display = True
                     self._fp += 1
                     # _current_cfp_stream_exploits 计数无用
                     self._current_cfp_stream_exploits += 1
@@ -148,7 +148,7 @@ class Performance:
                     # 实际是异常， 真阳
                     # 假阳结束，一次假阳计数加一，多次假阳算一个
                     self._cfp_end_exploits()
-
+                    need_display = True
                     if self._alarm is False:
                         self._tp += 1
                         self._alarm_count += 1
@@ -186,6 +186,7 @@ class Performance:
                 # 真阴
                 self._cfp_end_normal()
                 self._tn += 1
+
 
         return need_display, self._current_exploit_time
     def add(left: Performance, right: Performance) -> Performance:

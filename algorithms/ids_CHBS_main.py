@@ -28,6 +28,7 @@ from algorithms.features.impl.sequence_period import Sequence_period
 from dataloader.data_loader_2021 import RecordingType
 from algorithms.performance_measurement import Performance
 from pprint import pprint
+from algorithms.decision_engines.tranAD import Mine_AD
 pd.options.mode.chained_assignment = None
 
 OUTPUT_FILES_NAMES = ['seen_syscalls', 'seen_args', 'max_freq', 'thresh_list']
@@ -69,7 +70,7 @@ REG_RATE = 0.001
 ENCODING_DIM = DECODING_DIM = 2
 BOTTLENECK = 1
 VERBOSE = 1
-
+USE_CHBS=True
 def _format_input(inputs, TRAINING_MODE=True):
 
     # inputs = list(itertools.chain.from_iterable(inputs))
@@ -113,28 +114,34 @@ class TrainModel(nn.Module):
 class Training:
     def __init__(self):
         # get model
-        self.model = TrainModel(3)
+        # CHIDS
+        if USE_CHBS:
+            self.model = TrainModel(3)
+        else:
+            self.max_array = [0] * 3
+            self._calloss = torch.nn.MSELoss(reduction='none')
+            # Mine Module
+            # Mine_AD(self._input_dim, lr=0.001, dropout=self._dropout, nhead = self._num_head, use_ae2 = self._use_ae2)
+            self.model = Mine_AD(3, lr=0.001, dropout=0.4, nhead = 3)
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model.to(self._device)
 
     def _get_thresholds_list(self, model, inp):
-        thresh_list = []
-        prediction = model(inp)
-        prediction_l = prediction.reshape(prediction.shape[0], prediction.shape[2]).cpu().detach().numpy()
-        inp_l = inp.reshape(inp.shape[0], inp.shape[2]).cpu().detach().numpy()
-        training_reconstruction_errors = np.mean(np.square(prediction_l - inp_l), axis=1)
+        if USE_CHBS:
+            thresh_list = []
+            prediction = model(inp)
+            prediction_l = prediction.reshape(prediction.shape[0], prediction.shape[2]).cpu().detach().numpy()
+            inp_l = inp.reshape(inp.shape[0], inp.shape[2]).cpu().detach().numpy()
+            training_reconstruction_errors = np.mean(np.square(prediction_l - inp_l), axis=1)
 
-        for _theta in np.arange(0.2, 2.2, 0.2):
-            thresh_list.append(max(training_reconstruction_errors) * _theta)
-
-        # prediction = model.predict(inp, verbose=VERBOSE)
-        # prediction = prediction.reshape(prediction.shape[0], prediction.shape[2])
-        # inp = inp.reshape(inp.shape[0], inp.shape[2])
-        # training_reconstruction_errors = np.mean(np.square(prediction - inp), axis=1)
-        #
-        # for _theta in np.arange(0.2, 2.2, 0.2):
-        #     thresh_list.append(max(training_reconstruction_errors) * _theta)
-
+            for _theta in np.arange(0.2, 2.2, 0.2):
+                thresh_list.append(max(training_reconstruction_errors) * _theta)
+        else:
+            window = inp.permute(1, 0, 2)
+            reconstruct1, reconstruct2, rec_loss1 = model(window)
+            loss = self._calloss(window,reconstruct2).reshape(-1, 3)
+            thresh_list = loss.cpu().detach().numpy()
+            thresh_list = thresh_list.max(axis=0)
         return thresh_list
 
     def val_model(self, val_anomaly_vectors):
@@ -145,7 +152,13 @@ class Training:
         val_dataset = torch.Tensor(val_anomaly_vectors).to(self._device)
         self.model.eval()
         thresh_list = self._get_thresholds_list(self.model, val_dataset)
-
+        if not USE_CHBS:
+            if isinstance(thresh_list, np.ndarray):
+                self.max_array = np.fmax(self.max_array, thresh_list)
+            else:
+                if thresh_list is not None:
+                    self.max_array = max(thresh_list, self.max_array)
+            thresh_list = self.max_array
         return thresh_list
 
     def train_model(self, anomaly_vectors):
@@ -165,16 +178,20 @@ class Training:
                           'training network:'.rjust(25),
                           unit=" epochs"):
             for i, data in enumerate(train_dataloader, 0):
-                outputs = self.model(data)
-                optimizer.zero_grad()
-                classify_loss = criterion(outputs, data)
+                if USE_CHBS:
+                    outputs = self.model(data)
+                    optimizer.zero_grad()
+                    classify_loss = criterion(outputs, data)
 
-                regularization_loss = 0
-                for param in self.model.parameters():
-                    regularization_loss += torch.sum(abs(param))
-
-                loss = classify_loss + REG_RATE * regularization_loss
-
+                    regularization_loss = 0
+                    for param in self.model.parameters():
+                        regularization_loss += torch.sum(abs(param))
+                    loss = classify_loss + REG_RATE * regularization_loss
+                else:
+                    window = data.permute(1, 0, 2)
+                    reconstruct1, reconstruct2, rec_loss1 = self.model(window)
+                    loss = (1 / (epoch + 1)) * criterion(window, reconstruct1) + (1 - 1 / (epoch + 1)) * criterion(window, reconstruct2)
+                    optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
             print("Epoch: %d, loss: %1.5f\n" % (epoch, loss.item()))
@@ -185,13 +202,20 @@ class Training:
     def _get_reconstruction_loss(self, scap_anomaly_vectors):
         formatted_anomaly_vectors, vector_time= _format_input(scap_anomaly_vectors)
         trace_anomaly_vectors = formatted_anomaly_vectors.reshape(formatted_anomaly_vectors.shape[0], 1, formatted_anomaly_vectors.shape[1])
-
         self.model.eval()
         input_tensor = torch.Tensor(trace_anomaly_vectors).to(self._device)
-        trace_prediction = self.model(input_tensor)
-        trace_prediction_l = trace_prediction.reshape(trace_prediction.shape[0], trace_prediction.shape[2]).cpu().detach().numpy()
-        trace_anomaly_vectors = trace_anomaly_vectors.reshape(trace_anomaly_vectors.shape[0], trace_anomaly_vectors.shape[2])
-        errors = np.mean(np.square(trace_prediction_l - trace_anomaly_vectors), axis=1)
+        if USE_CHBS:
+            trace_prediction = self.model(input_tensor)
+            trace_prediction_l = trace_prediction.reshape(trace_prediction.shape[0], trace_prediction.shape[2]).cpu().detach().numpy()
+            trace_anomaly_vectors = trace_anomaly_vectors.reshape(trace_anomaly_vectors.shape[0], trace_anomaly_vectors.shape[2])
+            errors = np.mean(np.square(trace_prediction_l - trace_anomaly_vectors), axis=1)
+        else:
+            window = input_tensor.permute(1, 0, 2)
+            reconstruct1, reconstruct2, rec_loss1 = self.model(window)
+            loss = self._calloss(window, reconstruct2)
+            test_loss = torch.mean(loss, dim=0)
+            errors = test_loss.cpu().detach().numpy(),
+
         return errors, vector_time
 def get_filepath(raw_arg, category):
 
@@ -438,9 +462,9 @@ def save_file(training_elements, model, output_folder):
         if not Path(path).is_dir():
             print('Create dir %s' %path)
             os.mkdir(path)
-
-        torch.save(model.state_dict(), path+'/'+'model.h5')
-        console.print('model' + ' -------->  saved successfully in {}'.format(output_folder), style='green bold')
+        if USE_CHBS:
+            torch.save(model.state_dict(), path+'/'+'model.h5')
+            console.print('model' + ' -------->  saved successfully in {}'.format(output_folder), style='green bold')
 
         for _, ele in enumerate(training_elements):
             with open(output_folder + "/" + OUTPUT_FILES_NAMES[_] + ".pkl", 'wb') as f:
@@ -466,10 +490,13 @@ class CHBS_Model(BuildingBlock):
 
         # torch.save(model.state_dict(), path + '/' + 'model.h5')
         model_save_path = model_path + '/' + 'model.h5'
+
         if os.path.exists(model_save_path):
             try:
-                self.train_pro.model.load_state_dict(torch.load(model_save_path))
-                print(f'Load Model in {model_save_path}')
+                if USE_CHBS:
+                    self.need_train = False
+                    self.train_pro.model.load_state_dict(torch.load(model_save_path))
+                    print(f'Load Model in {model_save_path}')
                 #  ['seen_syscalls', 'seen_args', 'max_freq', 'thresh_list']
                 self.seen_syscalls = load_pickled_file(model_path + '/seen_syscalls.pkl')
                 self.seen_args = load_pickled_file(model_path + '/seen_args.pkl')
@@ -479,7 +506,7 @@ class CHBS_Model(BuildingBlock):
                 print('Load Model and Data Failed')
                 return
 
-            self.need_train = False
+
     def depends_on(self):
         return []
 
@@ -517,7 +544,7 @@ class CHBS_Model(BuildingBlock):
         output_table.add_row(str(self.len_scaps), str(self.seen_syscalls)[1:-1], str(self.seen_args)[1:-1], str(self.thresh_list)[1:-1])
 
         print(output_table)
-        if self.need_train:
+        if self.need_train and USE_CHBS:
             save_file([self.seen_syscalls, self.seen_args, self.max_freq, self.thresh_list], self.train_pro.model, self.model_save_path)
 
     def _calculate(self, scaps_dfs):
@@ -533,16 +560,24 @@ class CHBS_Model(BuildingBlock):
 
 
     def _classify(self, scap_anomaly_vectors):
-        result = pd.DataFrame()
-        result[LOSS], vector_time= self.train_pro._get_reconstruction_loss(scap_anomaly_vectors)
         result_of_thetas = []
+        if USE_CHBS:
+            result = pd.DataFrame()
+            result[LOSS], vector_time= self.train_pro._get_reconstruction_loss(scap_anomaly_vectors)
+            for threshold in self.thresh_list:
+                result[ANOMALY] = result[LOSS] > threshold
+                result[NORMAL] = result[LOSS] <= threshold
+                # is_anomalous = True if len(result[result[ANOMALY] == True]) > 0 else False
 
-        for threshold in self.thresh_list:
-            result[ANOMALY] = result[LOSS] > threshold
-            result[NORMAL] = result[LOSS] <= threshold
-            # is_anomalous = True if len(result[result[ANOMALY] == True]) > 0 else False
-
-            result_of_thetas.append(result)
+                result_of_thetas.append(result)
+        else:
+            result, vector_time = self.train_pro._get_reconstruction_loss(scap_anomaly_vectors)
+            arr = np.greater(self.thresh_list * 2, result[0])
+            for a in arr:
+                if np.all(a):
+                    result_of_thetas.append(False)
+                else:
+                    result_of_thetas.append(True)
 
         return result_of_thetas, vector_time
     def _seen_syscalls(self, scaps_dfs):
@@ -580,7 +615,7 @@ if __name__ == '__main__':
 
     # scenarios ordered by training data size asc
     SCENARIOS = [
-        "CVE-2017-7529",
+        "ZipSlip",
         "Juice-Shop",
         "CVE-2020-13942",
         "CWE-89-SQL-injection",
@@ -595,7 +630,6 @@ if __name__ == '__main__':
         "CVE-2019-5418",
         "PHP_CWE-434",
 
-        "ZipSlip",
         "CVE-2017-12635_6"
     ]
 
@@ -666,24 +700,37 @@ if __name__ == '__main__':
             df_all_list = seq_dfs._calculate(None)
             if len(df_all_list) > 0:
                 is_anomaly, vector_time = model.test_on(df_all_list)
-                for i, performance in enumerate(perf_list):
+                if USE_CHBS:
+                    for i, performance in enumerate(perf_list):
+                        performance.new_recording(recording)
+
+                    for i, performance in enumerate(perf_list):
+                        for index, cur_time in enumerate(vector_time):
+                            need_hanle, current_exploit_time = performance.analyze_batchs(cur_time * (10 ** (-9)), is_anomaly[i]['anomaly'][index])
+
+                    save_result = None
+                    for i, performance in enumerate(perf_list):
+                        results = performance.get_results()
+                        results['scenario'] = scenario_name
+                        results['Model'] = 'CHBS_Model'
+                        # pprint(results)
+                        if save_result is None:
+                            save_result = results
+                        if results['recall'] > save_result['recall']:
+                            save_result = results
+                else:
+                    performance = perf_list[0]
                     performance.new_recording(recording)
-
-                for i, performance in enumerate(perf_list):
                     for index, cur_time in enumerate(vector_time):
-                        need_hanle, current_exploit_time = performance.analyze_batchs(cur_time * (10 ** (-9)), is_anomaly[i]['anomaly'][index])
+                        need_hanle, current_exploit_time = performance.analyze_batchs(cur_time * (10 ** (-9)),
+                                                                                      is_anomaly[index])
 
-        save_result = None
-        for i, performance in enumerate(perf_list):
-            results = performance.get_results()
-            results['scenario'] = scenario_name
-            results['Model'] = 'CHBS_Model'
-            pprint(results)
-            if save_result is None:
-                save_result = results
-            if results['recall'] > save_result['recall']:
-                save_result = results
 
+        # results = performance.get_results()
+        # results['scenario'] = scenario_name
+        # results['Model'] = 'CHBS_Model'
+
+        # save_result = results
         end = time.time()
         detection_time = (end - start) / 60  # in min
         save_result['date'] = str(datetime.now().date())

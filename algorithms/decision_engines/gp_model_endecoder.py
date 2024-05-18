@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import math
 
-from algorithms.decision_engines.tranAD import TranAD
+from algorithms.decision_engines.Mine_AD import TranAD
 
 ENCODING_DIM = DECODING_DIM = 2
 BOTTLENECK = 1
@@ -151,7 +151,7 @@ class GP_Encoder_Decoder(BuildingBlock):
     def _set_model(self, input_dim):
         # self.model = TrainModel(input_dim)
         self.model = AENetwork(input_dim)
-        self.model =  TranAD(input_dim, 0.001)
+        self.model = TranAD(input_dim, 0.001)
         self.model.to(self._device)
     def depends_on(self):
         return self._dependency_list

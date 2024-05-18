@@ -6,7 +6,9 @@ import math
 import logging
 import argparse
 import traceback
-
+import sys
+import os
+sys.path.append('.')
 from pprint import pprint
 
 from dataloader.direction import Direction
@@ -23,52 +25,48 @@ from algorithms.features.impl.ngram import Ngram
 from algorithms.features.impl.int_embedding import IntEmbedding
 
 from algorithms.decision_engines.stide import Stide
-
+from dataloader.dataset_create_gp import DATAOUT_DIR, work_dir
 from algorithms.persistance import save_to_mongo
 
 if __name__ == '__main__':
-    try:
-        logging.basicConfig(filename='experiments.log', level=logging.WARNING)
-        # parser = argparse.ArgumentParser(description='Statistics for LID-DS 2021 Syscalls')
-        #
-        # parser.add_argument('-d', dest='base_path', action='store', type=str, required=True,
-        #                     help='LID-DS Base Path')
-        # parser.add_argument('-s', dest='scenario', action='store', type=str, required=True,
-        #                     help='Scenario name')
-        # parser.add_argument('-n', dest='ngram_length', action='store', type=int, required=True,
-        #                     help='ngram length')
-        # parser.add_argument('-w', dest='window_length', action='store', type=int, required=True,
-        #                     help='window length')
-        # parser.add_argument('-e', dest='embedding_size', action='store', type=int, required=True,
-        #                     help='embedding size')
-        # parser.add_argument('-t', dest='thread_aware', type=lambda x: (str(x).lower() == 'true'), required=True,
-        #                     help='Set ngram to thread aware')
 
-        # args = parser.parse_args()
-        print("Start")
+    SCENARIOS = [
+        "CWE-89-SQL-injection",
+        "CVE-2017-7529",
+        "CVE-2014-0160",
+        "CVE-2012-2122",
+        "Bruteforce_CWE-307",
+        "CVE-2020-23839",
 
-        scenario = 'CWE-89-SQL-injection'
-        thread_aware = False
-        window_length = 100
-        ngram_length = 7
-        embedding_size = 3
-        hidden_size = int(math.sqrt(ngram_length * embedding_size))
-        direction = Direction.BOTH
-        dataloader = dataloader_factory('K:/hids/dataSet/' + scenario, direction=direction)
-        ### building blocks
-        # first: map each systemcall to an integer
-        syscall_embedding = IntEmbedding()
-        # flags = Flags()
-        # mode = Mode()
-        # process = ProcessName()
-        # process_embedding = IntEmbedding(process)
-        # concat = Concat([syscall_embedding, mode, flags])  # , process_embedding])
-        # # now build ngrams from these integers
+        "PHP_CWE-434",
+        "ZipSlip",
+        "CVE-2018-3760",
+        "CVE-2020-9484",
+        "EPS_CWE-434",
+        "CVE-2019-5418",
+        "Juice-Shop",
+        "CVE-2020-13942",
+        "CVE-2017-12635_6"
+    ]
+    SCENARIO_RANGE = SCENARIOS[0:1]
+
+
+    thread_aware = True
+    window_length = 64
+    ngram_length = 6
+    embedding_size = 3
+    hidden_size = int(math.sqrt(ngram_length * embedding_size))
+    direction = Direction.BOTH
+    for scenario_name in SCENARIO_RANGE:
+        scenario_path = os.path.join(work_dir,
+                                     scenario_name)
+        dataloader = dataloader_factory(scenario_path, direction=direction)
+        syscall_embedding = IntEmbedding(scenario_name=scenario_name)
         ngram = Ngram([syscall_embedding], thread_aware, ngram_length)
         # finally calculate the STIDE algorithm using these ngrams
         de = Stide(ngram)
 
-        stream_sum = StreamSum(de, False, window_length, False)
+        stream_sum = StreamSum(de, thread_aware, window_length, False)
         decider = MaxScoreThreshold(stream_sum)
         ### the IDS
         ids = IDS(data_loader=dataloader,
@@ -101,7 +99,6 @@ if __name__ == '__main__':
         results['ngram_length'] = ngram_length
         results['embedding'] = 'INT'
         results['algorithm'] = 'STIDE_BASE'
-        results['direction'] = DIRECTION
         results['stream_sum'] = window_length
         results['detection_time'] = detection_time
         results['config'] = ids.get_config()
@@ -111,11 +108,4 @@ if __name__ == '__main__':
         results['cluster'] = True
         results['parallel'] = False
         results['process_name'] = False
-        save_to_mongo(results)
-    except KeyError as e:
-        print(traceback.format_exc())
-        print('Experiment failed')
-        logging.error('Failed for scenario: %s ngram: %d window: %d',
-                      scenario,
-                      ngram_length,
-                      window_length)
+        # save_to_mongo(results)

@@ -2,7 +2,7 @@ from os import listdir, path
 
 from dataloader.direction import Direction
 from dataloader.base_data_loader import BaseDataLoader
-from dataloader.data_loader_2019 import DataLoader2019
+# from dataloader.data_loader_2019 import DataLoader2019
 from dataloader.data_loader_2021 import DataLoader2021
 from dataloader.dataloader_adfa_ld import DataLoaderADFALD
 from dataloader.dataloader_real_world import DataLoaderRealWorld

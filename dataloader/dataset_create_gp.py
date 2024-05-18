@@ -800,10 +800,7 @@ def save_training_data(training, train_sc_size_list, train_scg, train_scg_only_s
 if __name__ == '__main__':
     # scenarios ordered by training data size asc
     SCENARIOS = [
-        "ZipSlip",
-        "CVE-2017-12635_6",
-
-        # Done
+        "project",
         "EPS_CWE-434",
         "CVE-2020-9484",
         "PHP_CWE-434",

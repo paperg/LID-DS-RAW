@@ -1,23 +1,30 @@
 
 import os
-import sys
-import time
-import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from rich.table import Table
-from rich import print as rptint
 from rich.console import Console
-import networkx as nx
-import re
+import scienceplots
 
 from dataloader.direction import Direction
 from dataloader.dataloader_factory import dataloader_factory
 from dataloader.data_loader_2021 import DataLoader2021
 from dataloader.data_loader_2021 import RecordingType
 from dataloader.dataset_create_gp import DATAOUT_DIR, work_dir
+from PIL import Image
+import io
+from matplotlib.font_manager import FontProperties
+
+# plt.style.use(['science','ieee'])
+plt.style.use(['science','grid'])
+plt.style.use(['science','no-latex'])
+plt.rcParams['axes.unicode_minus'] = False
+# 修改图中的默认字体
+# plt.rc('font',family='Times New Roman')
+plt.rcParams['font.sans-serif']=['SimSun']
+font_set = FontProperties(fname=r'C:\Windows\Fonts\simsun.ttc')
 
 NORMAL = 'NORMAL'
 NORMAL_AND_ATTACK = 'NORMAL_AND_ATTACK'
@@ -28,84 +35,15 @@ TRAINING = 'training'
 VALIDATION = 'validation'
 TEST = 'test'
 
-plt.rcParams['font.sans-serif']=['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
+def create_tiff(save_path):
+    png1 = io.BytesIO()
+    plt.savefig(png1, format='png', dpi=100)
+    png2 = Image.open(png1)
+    # Save as TIFF
+    png2.save(save_path)
+    png1.close()
+    plt.clf()
 
-
-class setfig():
-    '''
-       在绘图前对字体类型、字体大小、分辨率、线宽、输出格式进行设置.
-       para colume = 1.半栏图片 7*6cm
-                     2.双栏长图 14*6cm
-       x轴刻度默认为整数
-       手动保存时，默认输出格式为 pdf
-       案例 Sample.1:
-            fig=setfig(column=2)
-            plt.semilogy(x, color='blue', linestyle='solid', label='信号1')
-            plt.legend(loc='upper left')
-            plt.xlabel('时间/t')
-            plt.ylabel('幅度')
-            plt.title('冲击声信号')
-            fig.show()
-    '''
-
-    def __init__(self, column):
-
-        self.column = column  # 设置栏数
-        # 对尺寸和 dpi参数进行调整
-        plt.rcParams['figure.dpi'] = 300
-
-        # 字体调整
-        plt.rcParams['font.sans-serif'] = ['simhei']  # 如果要显示中文字体,则在此处设为：simhei,Arial Unicode MS
-        plt.rcParams['font.weight'] = 'light'
-        plt.rcParams['axes.unicode_minus'] = False  # 坐标轴负号显示
-        plt.rcParams['axes.titlesize'] = 8  # 标题字体大小
-        plt.rcParams['axes.labelsize'] = 7  # 坐标轴标签字体大小
-        plt.rcParams['xtick.labelsize'] = 7  # x轴刻度字体大小
-        plt.rcParams['ytick.labelsize'] = 7  # y轴刻度字体大小
-        plt.rcParams['legend.fontsize'] = 6
-
-        # 线条调整
-        plt.rcParams['axes.linewidth'] = 1
-
-        # 刻度在内，设置刻度字体大小
-        plt.rcParams['xtick.direction'] = 'in'
-        plt.rcParams['ytick.direction'] = 'in'
-
-        # 设置输出格式为PDF
-        plt.rcParams['savefig.format'] = 'pdf'
-        plt.rcParams['figure.autolayout'] = True
-
-    @property
-    def tickfont(self):
-        plt.tight_layout()
-        ax1 = plt.gca()  # 获取当前图像的坐标轴
-        # 更改坐标轴字体，避免出现指数为负的情况
-        tick_font = font_manager.FontProperties(family='it', size=7.0)
-        ax1.xaxis.set_major_locator
-        for labelx in ax1.get_xticklabels():
-            labelx.set_fontproperties(tick_font)
-        for labely in ax1.get_yticklabels():
-            labely.set_fontproperties(tick_font)
-        ax1.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))  # x轴刻度设置为整数
-
-    @property
-    def Global_font(self):
-        # 设置基本字体
-        plt.rcParams['font.sans-serif'] = ['simhei']  # 如果要显示中文字体,则在此处设为：simhei,Arial Unicode MS
-        plt.rcParams['font.weight'] = 'light'
-
-    def show(self):
-        # 改变字体
-        self.Global_font
-        self.tickfont
-        # 改变图像大小
-        cm_to_inc = 1 / 2.54  # 厘米和英寸的转换 1inc = 2.54cm
-        gcf = plt.gcf()  # 获取当前图像
-        if self.column == 1:
-            gcf.set_size_inches(7 * cm_to_inc, 6 * cm_to_inc)
-        else:
-            gcf.set_size_inches(14 * cm_to_inc, 6 * cm_to_inc)
 def display_file(train_file_dict, val_file_dict, test_file_dict, scenario_name):
     output_table = Table(title='File Statistics')
     output_table.add_column("DIR", style="magenta")
@@ -236,13 +174,14 @@ def analysis_unseen_args(dataloader, scenario_name):
         nor_result = unseenargs_df[unseenargs_df.is_exploit == False].groupby('Current Time').apply(get_uai_per_row)
         exp_result = unseenargs_df[unseenargs_df.is_exploit == True].groupby('Current Time').apply(get_uai_per_row)
 
-        plt.figure(figsize=(18, 15))
-        plt.title("UnSeen ARGS Score", fontsize=14)
-        plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=6, ls='')
-        plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=9, ls='')
-
-        plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenArgs.png'))
-
+        # plt.figure(figsize=(18, 15))
+        # plt.title("UnSeen ARGS Score")
+        plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', ls='', label='正常序列')
+        plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v',  ls='', label='异常序列')
+        plt.xlabel("未见文件异常分数", fontproperties=font_set)
+        plt.ylabel("周期样本数量", fontproperties=font_set)
+        plt.legend(prop=font_set)
+        create_tiff(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenArgs.tiff'))
     print('analysis_unseen_args() Success')
 
 def analysis_syscall_size(dataloader, scenario_name):
@@ -277,13 +216,10 @@ def analysis_syscall_size(dataloader, scenario_name):
 
 def analysis_ret_max(dataloader, scenario_name):
     data_type_list = [
-        {'type': TRAINING, 'data': dataloader.training_data()},
+        # {'type': TRAINING, 'data': dataloader.training_data()},
         {'type': VALIDATION, 'data': dataloader.validation_data()},
         {'type': TEST, 'data': dataloader.test_data()}
     ]
-
-    plt.figure(figsize=(18, 15))
-    plt.title("Ret Less Zero Number", fontsize=14)
 
     for data_type in data_type_list:
         freq_nor_list = []
@@ -303,36 +239,39 @@ def analysis_ret_max(dataloader, scenario_name):
                     continue
 
                 for data in data_array:
-                    ret = data[47]
+                    # ret = data[47]
                     index = data[0]
-                    # freq = len(df[index])
+                    freq = len(df[index])
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                     #     # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
                     #     plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6, ls='')
-                        freq_nor_list.append(ret)
+                        freq_nor_list.append(freq)
                     else:
-                        freq_exp_list.append(ret)
+                        freq_exp_list.append(freq)
                     #     plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
                     #     # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
 
-    # plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'Ret_Less_Zero_Number.png'))
-    # plt.clf()
-    # plt.show()
-    print('analysis_ret_max() Success')
+    # print('analysis_ret_max() Success')
 
-    # freq_nor_list = np.array(freq_nor_list)
-    # freq_exp_list = np.array(freq_exp_list)
+    freq_nor_list = np.array(freq_nor_list)
+    freq_exp_list = np.array(freq_exp_list)
     y_list = np.bincount(freq_nor_list)
     x_labels = [x for x in range(len(y_list))]
-    plt.figure(figsize=(18, 15))
-    plt.title("Return Status", fontsize=14)
-    plt.plot(x_labels , y_list, c='b', alpha=0.5, marker='^', markersize=6, ls='')
+    # plt.figure(figsize=(18, 15))
+    # plt.title("Return Status")
+    plt.plot(x_labels , y_list, c='b', alpha=0.5, marker='^', label='正常序列')
     y_list = np.bincount(freq_exp_list)
     x_labels = [x for x in range(len(y_list))]
-    plt.plot(x_labels , y_list, c='r', alpha=0.2, marker='o', markersize=8, ls='')
+    plt.plot(x_labels, y_list, c='r', alpha=0.2, marker='o',label='异常序列')
 
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'Return.png'))
-    print('Return Status Success')
+    plt.xlabel("频率大小", fontproperties=font_set)
+    plt.ylabel("序列个数", fontproperties=font_set)
+    plt.legend(prop=font_set)
+
+    create_tiff(os.path.join(DATAOUT_DIR, scenario_name, 'Syscall_Freq.tiff'))
+    # plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'Return.png'))
+    # print('Return Status Success')
+    print('syscall Frequency')
 
 def analysis_sc_max_freq(dataloader, scenario_name):
     data_type_list = [
@@ -341,8 +280,8 @@ def analysis_sc_max_freq(dataloader, scenario_name):
         {'type': TEST, 'data': dataloader.test_data()}
     ]
 
-    plt.figure(figsize=(18, 15))
-    plt.title("SC Max Call Freq", fontsize=14)
+    # plt.figure(figsize=(18, 15))
+    plt.title("SC Max Call Freq")
     x_labels = [i for i in range(8)]
     dataSet_Static = {TRAINING:0, VALIDATION:0, TEST:0}
     for data_type in data_type_list:
@@ -371,12 +310,15 @@ def analysis_sc_max_freq(dataloader, scenario_name):
 
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                         # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6, ls='')
+                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', ls='', label='正常序列')
                     else:
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
+                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', ls='', label='异常序列')
                         # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
 
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'SC_Max_Call_Freq.png'))
+    plt.xlabel("频率序列", fontproperties=font_set)
+    plt.ylabel("频率", fontproperties=font_set)
+    plt.legend(prop=font_set)
+    # create_tiff(os.path.join(DATAOUT_DIR, scenario_name, 'SC_Max_Call_Freq.tiff'))
     # plt.show()
     print('analysis_sc_max_freq() Success')
 
@@ -488,19 +430,21 @@ def analysis_unseen_sc(dataloader, scenario_name):
     console.print(output_table, justify="center")
     console.save_svg(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenSyc_Statistics.svg'), title=scenario_name)
 
-    plt.figure(figsize=(18, 15))
-    plt.title("UnSeen Score", fontsize=14)
-    plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=6, ls='')
-    plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=9, ls='')
-
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenSc.png'))
-    plt.clf()
-    plt.title("UnSeen Only SC Score", fontsize=14)
-    plt.plot(nor_result_only_sc.value_counts().index.tolist(), nor_result_only_sc.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', markersize=6, ls='')
-    plt.plot(exp_result_only_sc.value_counts().index.tolist(), exp_result_only_sc.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', markersize=9, ls='')
-
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'UnSeenSc_OnlySc.png'))
-
+    # plt.figure(figsize=(18, 15))
+    # plt.title("UnSeen Score")
+    plt.plot(nor_result.value_counts().index.tolist(), nor_result.value_counts().values.tolist(), c='b', alpha=0.5, marker='o',  ls='', label='正常序列')
+    plt.plot(exp_result.value_counts().index.tolist(), exp_result.value_counts().values.tolist(), c='r', alpha=0.5, marker='v',  ls='', label='异常序列')
+    plt.xlabel('未见系统调用异常分数', fontproperties=font_set)
+    plt.ylabel('周期样本数量', fontproperties=font_set)
+    plt.legend(prop=font_set)
+    create_tiff('UnSeenSc.tiff')
+    # plt.title("UnSeen Only SC Score", fontsize=14)
+    plt.plot(nor_result_only_sc.value_counts().index.tolist(), nor_result_only_sc.value_counts().values.tolist(), c='b', alpha=0.5, marker='o', ls='', label='正常序列')
+    plt.plot(exp_result_only_sc.value_counts().index.tolist(), exp_result_only_sc.value_counts().values.tolist(), c='r', alpha=0.5, marker='v', ls='', label='异常序列')
+    plt.xlabel("未见系统调用异常分数", fontproperties=font_set)
+    plt.ylabel("周期样本数量", fontproperties=font_set)
+    plt.legend(prop=font_set)
+    create_tiff('UnSeenSc_OnlySc.tiff')
     print('analysis_unseen_sc() Success')
 
 def analysis_pid_tid(dataloader, scenario_name):
@@ -510,8 +454,8 @@ def analysis_pid_tid(dataloader, scenario_name):
         {'type': TEST, 'data': dataloader.test_data()}
     ]
 
-    plt.figure(figsize=(18, 15))
-    plt.title("PID TID Scatter", fontsize=14)
+    # plt.figure(figsize=(18, 15))
+    plt.title("PID TID Scatter")
     x_labels = ['PID Switch Freq', 'PID Unique', 'TID Switch Freq', 'TID Unique']
 
     for data_type in data_type_list:
@@ -534,11 +478,14 @@ def analysis_pid_tid(dataloader, scenario_name):
                     y = data[41:45] / len(df[index])
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                         # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6,ls='')
+                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', ls='', label='正常序列')
                     else:
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
+                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', ls='', label='异常序列')
                         # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'PID_TID_Num_Freq.png'))
+    plt.xlabel("类型", fontproperties=font_set)
+    plt.ylabel("频率", fontproperties=font_set)
+    plt.legend(prop=font_set)
+    create_tiff('PID_TID_Num_Freq.tiff')
     # plt.show()
     print('analysis_pid_tid() Success')
 
@@ -553,8 +500,8 @@ def analysis_time_delta(dataloader, scenario_name):
 
     normal_max_scNum = 0
     exploit_max_scNum = 0
-    plt.figure(figsize=(18, 15))
-    plt.title("TimeDelta Scatter", fontsize=14)
+    # plt.figure(figsize=(18, 15))
+    plt.title("TimeDelta Scatter")
     x_labels = [i for i in range(0, 39)]
 
     for data_type in data_type_list:
@@ -578,17 +525,31 @@ def analysis_time_delta(dataloader, scenario_name):
                     number_line = len(df[index])
                     if exploit_start_time == 0 or exploit_start_time > df[index].iloc[-1]['time']:
                         # plt.scatter(x_labels, y, c='b', alpha=0.5, s=6)
-                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', markersize=6, ls='')
+                        plt.plot(x_labels, y, c='b', alpha=0.5, marker='o', ls='', label='正常序列')
                         normal_max_scNum = normal_max_scNum if normal_max_scNum > number_line else number_line
                     else:
                         # plt.scatter(x_labels, y, c='r', alpha=0.5, s=10)
-                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', markersize=9, ls='')
+                        plt.plot(x_labels, y, c='r', alpha=0.5, marker='v', ls='', label='异常序列')
                         exploit_max_scNum = exploit_max_scNum if exploit_max_scNum > number_line else number_line
 
-    plt.savefig(os.path.join(DATAOUT_DIR, scenario_name, 'TimeDeltaScatter.png'))
+    plt.xlabel("时间间隔", fontproperties=font_set)
+    plt.ylabel("时间间隔数量", fontproperties=font_set)
+    plt.legend(prop=font_set)
+    create_tiff(os.path.join(DATAOUT_DIR, scenario_name, 'TimeDeltaScatter.tiff'))
     # plt.show()
     print('normal_max_scNum %d exploit_max_scNum %d ' % (normal_max_scNum, exploit_max_scNum))
     print('analysis_time_delta() Success')
+
+
+def create_background_pic():
+    year = [2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019]
+    loss = [21, 20, 25, 23, 30, 25, 32, 39, 66, 104, 105]
+
+    plt.bar(year, loss)
+    plt.xlabel("时间", fontproperties=font_set)
+    plt.ylabel("网络攻击事件数量", fontproperties=font_set)
+    plt.legend(prop=font_set)
+    create_tiff(os.path.join(DATAOUT_DIR, 'background_pic.tiff'))
 
 if __name__ == '__main__':
 
@@ -615,18 +576,17 @@ if __name__ == '__main__':
         "PHP_CWE-434",
     ]
     SCENARIO_RANGE = SCENARIOS[0:13]
-    fig = setfig(2)
-
+    create_background_pic()
     for scenario_name in SCENARIO_RANGE:
         scenario_path = os.path.join(work_dir,
                                      scenario_name)
         dataloader = dataloader_factory(scenario_path, direction=Direction.CLOSE)
         # 统计文件个数
-        get_file_num(dataloader, scenario_name)
+        # get_file_num(dataloader, scenario_name)
         # analysis_unseen_sc(dataloader, scenario_name)
         # analysis_unseen_args(dataloader, scenario_name)
         # analysis_syscall_size(dataloader, scenario_name)
-        # analysis_ret_max(dataloader, scenario_name)
+        analysis_ret_max(dataloader, scenario_name)
         # analysis_sc_max_freq(dataloader, scenario_name)
         # analysis_time_delta(dataloader, scenario_name)
         # analysis_pid_tid(dataloader, scenario_name)

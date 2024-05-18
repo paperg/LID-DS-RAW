@@ -14,7 +14,7 @@ from algorithms.building_block import BuildingBlock
 from dataloader.syscall import Syscall
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
-
+from algorithms.ids_CHBS_main import TrainModel
 
 DATA_USED_BY_MODEL_DIR = 'data_used_by_model'
 
@@ -36,40 +36,74 @@ normal_sc_max_freq_end = normal_max_freq_end + 1
 
 ENCODING_DIM = DECODING_DIM = 4
 BOTTLENECK = 2
-
-class Trainmodel(nn.Module):
-    def __init__(self, input_dim):
-        super(Trainmodel, self).__init__()
-        self.input_dim = input_dim
-
-        # L1
-        self.L1 = nn.Linear(input_dim, input_dim * ENCODING_DIM)
-        self.L1_A = nn.Sigmoid()
-        # L2
-        self.L2 = nn.Linear(input_dim * ENCODING_DIM, input_dim * BOTTLENECK)
-        self.L2_A = nn.Sigmoid()
-        # L3
-        self.L3 = nn.Linear(input_dim * BOTTLENECK, input_dim * BOTTLENECK)
-        self.L3_A = nn.Sigmoid()
-        # L4
-        self.L4 = nn.Linear(input_dim * BOTTLENECK, input_dim * DECODING_DIM)
-        self.L4_A = nn.Sigmoid()
-        # out
-        self.out = nn.Linear(input_dim * DECODING_DIM, input_dim)
-        self.out_a = nn.Sigmoid()
-
-    def forward(self, input):
-        # encoder
-        L1 = self.L1_A(self.L1(input))
-        L2 = self.L2_A(self.L2(L1))
-
-        # decoder
-        L3 = self.L3_A(self.L3(L2))
-        L4 = self.L4_A(self.L4(L3))
-
-        output = self.out_a(self.out(L4))
-
-        return output
+#
+# class Trainmodel(nn.Module):
+#     def __init__(self, input_dim):
+#         super(Trainmodel, self).__init__()
+#         self.input_dim = input_dim
+#         self._dropout = 0.2
+#         hid_times = 4
+#         self.encoder1 = torch.nn.Sequential(
+#
+#             torch.nn.Linear(input_dim, input_dim * hid_times),
+#             torch.nn.Dropout(p=self._dropout),
+#             torch.nn.SELU(),
+#             # torch.nn.Sigmoid(),
+#             # torch.nn.Tanh(),
+#
+#             torch.nn.Linear(input_dim * hid_times, input_dim * hid_times * 4),
+#             torch.nn.Dropout(p=self._dropout),
+#             # torch.nn.Tanh(),
+#             torch.nn.SELU(),
+#             # torch.nn.Sigmoid(),
+#
+#             torch.nn.Linear(input_dim * hid_times * 4, input_dim * hid_times * 8),
+#             torch.nn.Dropout(p=self._dropout),
+#             torch.nn.SELU(),
+#             # torch.nn.Tanh(),
+#             # torch.nn.Sigmoid(),
+#         )
+#
+#         self.decoder1 = torch.nn.Sequential(
+#             torch.nn.Linear(input_dim * hid_times * 8, input_dim * hid_times * 4),
+#             torch.nn.Dropout(p=self._dropout),
+#             torch.nn.SELU(),
+#             # torch.nn.Sigmoid(),
+#
+#             torch.nn.Linear(input_dim * hid_times * 4, input_dim * hid_times),
+#             torch.nn.Dropout(p=self._dropout),
+#             torch.nn.SELU(),
+#             # torch.nn.Tanh(),
+#             # torch.nn.SELU(),
+#             # torch.nn.Sigmoid(),
+#
+#             torch.nn.Linear(input_dim * hid_times, input_dim),
+#             torch.nn.Dropout(p=self._dropout),
+#             # torch.nn.Tanh(),
+#             torch.nn.SELU(),
+#             # torch.nn.Sigmoid(),
+#         )
+#
+#         for m in self.encoder1:
+#             if isinstance(m, nn.Linear):
+#                 fan_in = m.in_features
+#                 nn.init.normal_(m.weight, 0, math.sqrt(1. / fan_in))
+#
+#         for m in self.decoder1:
+#             if isinstance(m, nn.Linear):
+#                 fan_in = m.in_features
+#                 nn.init.normal_(m.weight, 0, math.sqrt(1. / fan_in))
+#     def max_norm(self, max_val=2, eps=1e-8):
+#         for name, param in self.named_parameters():
+#             if 'bias' not in name:
+#                 norm = param.norm(2, dim=0, keepdim=True)
+#                 desired = torch.clamp(norm, 0, max_val)
+#                 param = param * (desired / (eps + norm))
+#     def forward(self, input):
+#         # encoder
+#         encoder_out = self.encoder1(input)
+#         output = self.decoder1(encoder_out)
+#         return output
 
 class CHBS_ad(BuildingBlock):
     def __init__(self,
@@ -95,6 +129,7 @@ class CHBS_ad(BuildingBlock):
         self._use_sc_max_params = use_dict['use_sc_max_params']
         self._use_ret = use_dict['use_ret']
         self._use_ae2 = use_dict['mode_use_ae2']
+        self._module_is_mine = False
 
         model_dir = os.path.split(model_path)[0]
         if not os.path.exists(model_dir):
@@ -126,7 +161,7 @@ class CHBS_ad(BuildingBlock):
         self._batch_counter_test = 0
 
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.Net = Trainmodel(self._input_dim)
+        self.Net = TrainModel(self._input_dim)
         self.Net.to(self._device)
 
         self._loss = torch.nn.MSELoss()
